@@ -218,7 +218,6 @@
             box-shadow: 0 4px 8px rgba(15, 123, 58, 0.15);
         }
         .btn-primary:hover { background: #0d6a30; transform: scale(0.98); }
-        .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
         .btn-warning {
             background: #d48c1f;
             border: none;
@@ -231,17 +230,6 @@
             transition: 0.15s;
         }
         .btn-warning:hover { background: #b87718; transform: scale(0.98); }
-        .btn-success {
-            background: #1f8b4c;
-            border: none;
-            color: white;
-            padding: 6px 16px;
-            border-radius: 40px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: 0.15s;
-        }
-        .btn-success:hover { background: #15733e; }
         .filter-bar {
             display: flex;
             flex-wrap: wrap;
@@ -332,7 +320,6 @@
         .counter-active { background: #d4edda; color: #155724; }
         .counter-completed { background: #d4edda; color: #155724; border-left: 4px solid green; }
         .counter-expired { background: #f8d7da; color: #721c24; border-left: 4px solid red; }
-        .counter-warning { background: #fff3cd; color: #856404; }
         .status-btn {
             padding: 4px 12px;
             border-radius: 20px;
@@ -343,7 +330,6 @@
         }
         .status-btn.complete { background: #28a745; color: white; }
         .status-btn.complete:hover { background: #218838; }
-        .status-btn.done { background: #6c757d; color: white; cursor: default; }
         @media (max-width: 700px) {
             .app-wrapper { padding: 16px; }
             .login-box { flex-direction: column; align-items: stretch; border-radius: 30px; padding: 24px; }
@@ -464,7 +450,7 @@
         <!-- TAB 3: Alarm Kur (Sadece Admin) -->
         <div id="tab3" class="tab-content admin-only">
             <div class="card">
-                <h3 style="margin-bottom:16px; color:#1f3a57;">⏱️ Sayaç / Alarm Kur</h3>
+                <h3 style="margin-bottom:16px; color:#1f3a57;">⏱️ Alarm / Sayaç Kur</h3>
                 <div class="row">
                     <div class="form-group">
                         <label>Grup</label>
@@ -481,8 +467,8 @@
                         <input type="number" id="alarmSiraInput" min="1" max="150" placeholder="1-150">
                     </div>
                     <div class="form-group">
-                        <label>Süre (dakika, 1-100)</label>
-                        <input type="number" id="alarmDurationInput" min="1" max="100" placeholder="1-100 dk">
+                        <label>Süre (dakika, 1-5000)</label>
+                        <input type="number" id="alarmDurationInput" min="1" max="5000" placeholder="1-5000 dk">
                     </div>
                     <div class="form-group" style="flex:0 0 auto;">
                         <button class="btn-warning" id="setAlarmBtn">⏱️ Sayaç Kur</button>
@@ -520,7 +506,6 @@
     let filteredRecords = [];
     let sortField = 'timestamp';
     let sortAsc = false;
-    let counterIntervals = {};
 
     // DOM refs
     const loginOverlay = document.getElementById('loginOverlay');
@@ -568,7 +553,6 @@
             userDisplay.textContent = '👤 Çıkış yapıldı';
             currentUser = null;
         }
-        // Admin sekmelerini göster/gizle
         document.querySelectorAll('.admin-only').forEach(el => {
             el.style.display = (role === 'admin') ? '' : 'none';
         });
@@ -613,9 +597,6 @@
         allRecords = [];
         filteredRecords = [];
         renderTable([]);
-        // Tüm interval'ları temizle
-        Object.values(counterIntervals).forEach(clearInterval);
-        counterIntervals = {};
     });
 
     // ----- KAYIT EKLE -----
@@ -640,16 +621,25 @@
         const timeStr = now.toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
         const timestamp = now.getTime();
 
+        // Alarm kurulmuş mu kontrol et
+        let counter = null;
+        let counterEnd = null;
+        const existingAlarm = allRecords.find(r => r.product === product && r.counter);
+        if (existingAlarm) {
+            counter = existingAlarm.counter;
+            counterEnd = existingAlarm.counterEnd;
+        }
+
         const newRecord = {
             group, sira, product, timestamp, date: dateStr, time: timeStr, user: currentUser,
-            counter: null, // başlangıçta sayaç yok
-            counterEnd: null,
-            status: 'active' // active, completed, expired
+            counter: counter || null,
+            counterEnd: counterEnd || null,
+            status: counter ? 'active' : 'active'
         };
 
         db.ref('records').push(newRecord)
             .then(() => {
-                document.getElementById('saveMessage').textContent = `✅ Kaydedildi: ${product}`;
+                document.getElementById('saveMessage').textContent = `✅ Kaydedildi: ${product} ${counter ? '(Sayaç aktif)' : ''}`;
                 document.getElementById('siraInput').value = '';
             })
             .catch(err => {
@@ -674,33 +664,55 @@
             document.getElementById('alarmMessage').textContent = '⚠️ Sıra No 1-150 arasında olmalı.';
             return;
         }
-        if (isNaN(duration) || duration < 1 || duration > 100) {
-            document.getElementById('alarmMessage').textContent = '⚠️ Süre 1-100 dakika arasında olmalı.';
+        if (isNaN(duration) || duration < 1 || duration > 5000) {
+            document.getElementById('alarmMessage').textContent = '⚠️ Süre 1-5000 dakika arasında olmalı.';
             return;
         }
         const product = `${group}-${sira}`;
         const now = Date.now();
         const endTime = now + duration * 60000;
 
-        // Bu ürün için mevcut kayıt var mı kontrol et
+        // Önce bu ürün için mevcut kayıt var mı kontrol et
         const existing = allRecords.find(r => r.product === product);
-        if (!existing) {
-            document.getElementById('alarmMessage').textContent = '⚠️ Bu ürün için önce kayıt oluşturun.';
-            return;
+        
+        if (existing) {
+            // Var olan kaydı güncelle
+            db.ref('records/' + existing.id).update({
+                counter: duration,
+                counterEnd: endTime,
+                status: 'active'
+            }).then(() => {
+                document.getElementById('alarmMessage').textContent = `✅ Sayaç güncellendi: ${product} ${duration} dk`;
+                document.getElementById('alarmSiraInput').value = '';
+                document.getElementById('alarmDurationInput').value = '';
+            }).catch(err => {
+                document.getElementById('alarmMessage').textContent = `❌ Hata: ${err.message}`;
+            });
+        } else {
+            // Yeni bir alarm kaydı oluştur (sadece sayaç bilgisi için)
+            const now2 = new Date();
+            const dateStr = now2.toLocaleDateString('tr-TR');
+            const timeStr = now2.toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+            const alarmRecord = {
+                group, sira, product,
+                timestamp: now2.getTime(),
+                date: dateStr,
+                time: timeStr,
+                user: 'admin',
+                counter: duration,
+                counterEnd: endTime,
+                status: 'active'
+            };
+            db.ref('records').push(alarmRecord)
+                .then(() => {
+                    document.getElementById('alarmMessage').textContent = `✅ Sayaç kuruldu: ${product} ${duration} dk`;
+                    document.getElementById('alarmSiraInput').value = '';
+                    document.getElementById('alarmDurationInput').value = '';
+                })
+                .catch(err => {
+                    document.getElementById('alarmMessage').textContent = `❌ Hata: ${err.message}`;
+                });
         }
-
-        // Firebase'de güncelle
-        db.ref('records/' + existing.id).update({
-            counter: duration,
-            counterEnd: endTime,
-            status: 'active'
-        }).then(() => {
-            document.getElementById('alarmMessage').textContent = `✅ Sayaç kuruldu: ${product} ${duration} dk`;
-            document.getElementById('alarmSiraInput').value = '';
-            document.getElementById('alarmDurationInput').value = '';
-        }).catch(err => {
-            document.getElementById('alarmMessage').textContent = `❌ Hata: ${err.message}`;
-        });
     });
 
     // ----- VERİ ÇEKME -----
@@ -800,7 +812,6 @@
         const isAdmin = (currentUser === 'admin');
         let html = '';
         records.forEach((rec) => {
-            // Sayaç durumu
             let counterDisplay = '-';
             let statusDisplay = 'Aktif';
             let statusClass = 'counter-active';
@@ -824,18 +835,15 @@
                     statusDisplay = 'Sayaç aktif';
                     statusClass = 'counter-active';
                 } else {
-                    // Süre doldu ama status güncellenmemiş
                     counterDisplay = `⏰ Süre doldu (${elapsed} dk geçti)`;
                     statusDisplay = 'Süre Doldu';
                     statusClass = 'counter-expired';
-                    // Firebase'de güncelle
                     if (rec.status !== 'expired' && rec.status !== 'completed') {
                         db.ref('records/' + rec.id).update({ status: 'expired' });
                     }
                 }
             }
 
-            // Tamamlandı butonu (sadece sayaç varsa ve aktifse)
             if (rec.counter && rec.status === 'active') {
                 btnHtml = `<button class="status-btn complete" data-id="${rec.id}">✅ Tamamlandı</button>`;
             } else if (rec.counter && rec.status === 'completed') {
@@ -858,7 +866,6 @@
         });
         tbody.innerHTML = html;
 
-        // Checkbox olayları
         document.querySelectorAll('.row-checkbox').forEach(cb => {
             cb.addEventListener('change', function() {
                 const id = this.dataset.id;
@@ -868,7 +875,6 @@
             });
         });
 
-        // Tamamlandı butonları
         document.querySelectorAll('.status-btn.complete').forEach(btn => {
             btn.addEventListener('click', function() {
                 const id = this.dataset.id;
@@ -879,7 +885,6 @@
             });
         });
 
-        // Sil butonları (admin)
         if (isAdmin) {
             document.querySelectorAll('.delete-btn').forEach(btn => {
                 btn.addEventListener('click', function(e) {
@@ -892,7 +897,6 @@
             });
         }
 
-        // Sıralama
         document.querySelectorAll('#recordsTable th[data-sort]').forEach(th => {
             th.style.cursor = 'pointer';
             th.addEventListener('click', function() {
@@ -1001,12 +1005,10 @@
 
     // ----- Sayaç kontrolü (periyodik) -----
     setInterval(() => {
-        // Sayaçları kontrol et
         const now = Date.now();
         allRecords.forEach(rec => {
             if (rec.counter && rec.status === 'active' && rec.counterEnd) {
                 if (now >= rec.counterEnd) {
-                    // Süre doldu
                     db.ref('records/' + rec.id).update({ status: 'expired' });
                 }
             }
