@@ -230,18 +230,6 @@
             transition: 0.15s;
         }
         .btn-warning:hover { background: #b87718; transform: scale(0.98); }
-        .btn-danger-sm {
-            background: #b13e3e;
-            border: none;
-            color: white;
-            padding: 6px 16px;
-            border-radius: 40px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: 0.15s;
-            font-size: 13px;
-        }
-        .btn-danger-sm:hover { background: #942f2f; }
         .filter-bar {
             display: flex;
             flex-wrap: wrap;
@@ -419,7 +407,7 @@
             <button class="tab-btn admin-only" data-tab="tab3">⏱️ Alarm Yönetimi</button>
         </div>
 
-        <!-- TAB 1: Kayıt Ekle -->
+        <!-- TAB 1: Kayıt Ekle - SADECE KAYIT EKLEME -->
         <div id="tab1" class="tab-content active">
             <div class="card">
                 <div class="row">
@@ -445,7 +433,7 @@
             </div>
         </div>
 
-        <!-- TAB 2: Kayıtlar -->
+        <!-- TAB 2: Kayıtlar - SADECE LİSTE, FİLTRE, EXCEL -->
         <div id="tab2" class="tab-content">
             <div class="filter-bar">
                 <div class="filter-group">
@@ -486,7 +474,7 @@
             </div>
         </div>
 
-        <!-- TAB 3: Alarm Yönetimi -->
+        <!-- TAB 3: Alarm Yönetimi - SADECE BURADA SAYAÇ AYARLAMA -->
         <div id="tab3" class="tab-content admin-only">
             <div class="card">
                 <h3 style="margin-bottom:16px; color:#1f3a57;">⏱️ Sayaç / Alarm Yönetimi</h3>
@@ -703,7 +691,7 @@
             });
     });
 
-    // ----- ALARM KUR / GÜNCELLE -----
+    // ----- ALARM KUR / GÜNCELLE (SADECE ADMIN) -----
     document.getElementById('setAlarmBtn').addEventListener('click', function() {
         if (currentUser !== 'admin') {
             document.getElementById('alarmMessage').textContent = '⛔ Sadece admin yetkilidir.';
@@ -772,7 +760,7 @@
         }
     });
 
-    // ----- SAYAÇ SİL -----
+    // ----- SAYAÇ SİL (ADMIN) -----
     window.deleteCounter = function(product) {
         if (currentUser !== 'admin') {
             document.getElementById('alarmMessage').textContent = '⛔ Sadece admin yetkilidir.';
@@ -804,7 +792,7 @@
             });
     };
 
-    // ----- SAYAÇ DÜZENLE -----
+    // ----- SAYAÇ DÜZENLE (ADMIN) -----
     window.editCounter = function(product) {
         const record = allRecords.find(r => r.product === product && r.counter !== null);
         if (!record) {
@@ -851,7 +839,7 @@
         });
     }
 
-    // ----- TANIMLI SAYAÇLARI GÖSTER -----
+    // ----- TANIMLI SAYAÇLARI GÖSTER (SADECE TAB3) -----
     function updateActiveCounters() {
         const container = document.getElementById('activeCountersList');
         if (!container) return;
