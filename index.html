@@ -342,6 +342,8 @@
         }
         .status-btn.complete { background: #28a745; color: white; }
         .status-btn.complete:hover { background: #218838; }
+        .status-btn.expired { background: #ffc107; color: #212529; }
+        .status-btn.expired:hover { background: #e0a800; }
         .alarm-list-item {
             background: #e3ecf5;
             padding: 6px 16px;
@@ -530,6 +532,7 @@
     let filteredRecords = [];
     let sortField = 'timestamp';
     let sortAsc = false;
+    let counterIntervals = {};
 
     // DOM refs
     const loginOverlay = document.getElementById('loginOverlay');
@@ -621,6 +624,8 @@
         allRecords = [];
         filteredRecords = [];
         renderTable([]);
+        Object.values(counterIntervals).forEach(clearInterval);
+        counterIntervals = {};
     });
 
     // ----- KAYIT EKLE (Sayaç varsa otomatik alır) -----
@@ -658,7 +663,9 @@
             group, sira, product, timestamp, date: dateStr, time: timeStr, user: currentUser,
             counter: counter || null,
             counterEnd: counterEnd || null,
-            status: counter ? 'active' : 'active'
+            status: counter ? 'active' : 'active',
+            completedAt: null,
+            elapsedWhenCompleted: null
         };
 
         db.ref('records').push(newRecord)
@@ -700,11 +707,13 @@
         const existing = allRecords.find(r => r.product === product);
         
         if (existing) {
-            // Var olan kaydı güncelle
+            // Var olan kaydı güncelle - completedAt ve elapsedWhenCompleted sıfırla
             db.ref('records/' + existing.id).update({
                 counter: duration,
                 counterEnd: endTime,
-                status: 'active'
+                status: 'active',
+                completedAt: null,
+                elapsedWhenCompleted: null
             }).then(() => {
                 document.getElementById('alarmMessage').textContent = `✅ Sayaç güncellendi: ${product} ${duration} dk`;
                 document.getElementById('alarmSiraInput').value = '';
@@ -725,7 +734,9 @@
                 user: 'admin',
                 counter: duration,
                 counterEnd: endTime,
-                status: 'active'
+                status: 'active',
+                completedAt: null,
+                elapsedWhenCompleted: null
             };
             db.ref('records').push(alarmRecord)
                 .then(() => {
@@ -757,7 +768,6 @@
         }
         const product = `${group}-${sira}`;
         
-        // Bu ürünün tüm kayıtlarında sayaç bilgisini temizle
         const recordsToUpdate = allRecords.filter(r => r.product === product && r.counter !== null);
         if (recordsToUpdate.length === 0) {
             document.getElementById('alarmMessage').textContent = `⚠️ ${product} için tanımlı sayaç bulunamadı.`;
@@ -766,10 +776,9 @@
 
         let updates = {};
         recordsToUpdate.forEach(rec => {
-            updates[rec.id] = { counter: null, counterEnd: null, status: 'active' };
+            updates[rec.id] = { counter: null, counterEnd: null, status: 'active', completedAt: null, elapsedWhenCompleted: null };
         });
 
-        // Toplu güncelleme yap
         const dbRef = db.ref('records');
         const updatePromises = Object.keys(updates).map(key => {
             return dbRef.child(key).update(updates[key]);
@@ -805,7 +814,9 @@
                         user: item.user || '',
                         counter: item.counter || null,
                         counterEnd: item.counterEnd || null,
-                        status: item.status || 'active'
+                        status: item.status || 'active',
+                        completedAt: item.completedAt || null,
+                        elapsedWhenCompleted: item.elapsedWhenCompleted || null
                     });
                 });
             }
@@ -815,13 +826,11 @@
         });
     }
 
-    // ----- AKTİF SAYAÇLARI GÖSTER (Tanımlı tüm sayaçlar) -----
+    // ----- AKTİF SAYAÇLARI GÖSTER -----
     function updateActiveCounters() {
         const container = document.getElementById('activeCountersList');
         if (!container) return;
-        // Tüm sayaç tanımları (counter null olmayanlar)
         const counters = allRecords.filter(r => r.counter !== null && r.counter !== undefined);
-        // Benzersiz ürünler
         const uniqueProducts = {};
         counters.forEach(r => {
             if (!uniqueProducts[r.product]) {
@@ -906,37 +915,54 @@
 
             if (rec.counter) {
                 const now = Date.now();
-                const remaining = Math.max(0, Math.round((rec.counterEnd - now) / 60000));
-                const elapsed = Math.round((now - (rec.counterEnd - rec.counter * 60000)) / 60000);
+                const startTime = rec.counterEnd - rec.counter * 60000;
+                let elapsed = Math.round((now - startTime) / 60000);
+                
+                // Eğer tamamlanmışsa ve elapsedWhenCompleted varsa onu kullan
+                if (rec.status === 'completed' && rec.elapsedWhenCompleted !== null) {
+                    elapsed = rec.elapsedWhenCompleted;
+                }
+                // Eğer tamamlanmışsa ve elapsedWhenCompleted yoksa hesapla
+                else if (rec.status === 'completed' && rec.elapsedWhenCompleted === null) {
+                    // Tamamlanma anındaki geçen süreyi hesapla
+                    if (rec.completedAt) {
+                        elapsed = Math.round((rec.completedAt - startTime) / 60000);
+                    }
+                }
                 
                 if (rec.status === 'completed') {
-                    counterDisplay = `✅ Tamamlandı (${rec.counter} dk)`;
+                    counterDisplay = `✅ Tamamlandı (${elapsed} dk geçti)`;
                     statusDisplay = 'Tamamlandı';
                     statusClass = 'counter-completed';
                 } else if (rec.status === 'expired') {
                     counterDisplay = `⏰ Süre doldu (${elapsed} dk geçti)`;
                     statusDisplay = 'Süre Doldu';
                     statusClass = 'counter-expired';
-                } else if (remaining > 0) {
-                    counterDisplay = `⏱️ ${remaining} dk kaldı`;
-                    statusDisplay = 'Sayaç aktif';
-                    statusClass = 'counter-active';
                 } else {
-                    counterDisplay = `⏰ Süre doldu (${elapsed} dk geçti)`;
-                    statusDisplay = 'Süre Doldu';
-                    statusClass = 'counter-expired';
-                    if (rec.status !== 'expired' && rec.status !== 'completed') {
-                        db.ref('records/' + rec.id).update({ status: 'expired' });
+                    const remaining = Math.max(0, Math.round((rec.counterEnd - now) / 60000));
+                    if (remaining > 0) {
+                        counterDisplay = `⏱️ ${remaining} dk kaldı`;
+                        statusDisplay = 'Sayaç aktif';
+                        statusClass = 'counter-active';
+                    } else {
+                        counterDisplay = `⏰ Süre doldu (${elapsed} dk geçti)`;
+                        statusDisplay = 'Süre Doldu';
+                        statusClass = 'counter-expired';
+                        if (rec.status !== 'expired' && rec.status !== 'completed') {
+                            db.ref('records/' + rec.id).update({ status: 'expired' });
+                        }
                     }
                 }
             }
 
-            if (rec.counter && rec.status === 'active') {
+            // Butonlar: Eğer sayaç varsa ve tamamlanmadıysa
+            if (rec.counter && rec.status !== 'completed') {
                 btnHtml = `<button class="status-btn complete" data-id="${rec.id}">✅ Tamamlandı</button>`;
             } else if (rec.counter && rec.status === 'completed') {
                 btnHtml = `<span style="color:#28a745;">✅ Tamamlandı</span>`;
             } else if (rec.counter && rec.status === 'expired') {
-                btnHtml = `<span style="color:#dc3545;">⏰ Süre Doldu</span>`;
+                // Süre dolmuş ama tamamlanmamış - tamamlandı butonu göster
+                btnHtml = `<button class="status-btn expired" data-id="${rec.id}">✅ Tamamlandı</button>`;
             }
 
             const checked = rec._checked ? 'checked' : '';
@@ -953,6 +979,7 @@
         });
         tbody.innerHTML = html;
 
+        // Checkbox olayları
         document.querySelectorAll('.row-checkbox').forEach(cb => {
             cb.addEventListener('change', function() {
                 const id = this.dataset.id;
@@ -962,16 +989,29 @@
             });
         });
 
-        document.querySelectorAll('.status-btn.complete').forEach(btn => {
+        // Tamamlandı butonları (hem active hem expired için)
+        document.querySelectorAll('.status-btn.complete, .status-btn.expired').forEach(btn => {
             btn.addEventListener('click', function() {
                 const id = this.dataset.id;
                 if (confirm('Bu ürünü tamamlandı olarak işaretlemek istediğinize emin misiniz?')) {
-                    db.ref('records/' + id).update({ status: 'completed' })
-                        .catch(err => alert('Hata: ' + err.message));
+                    const rec = allRecords.find(r => r.id === id);
+                    if (rec && rec.counter) {
+                        const startTime = rec.counterEnd - rec.counter * 60000;
+                        const elapsed = Math.round((Date.now() - startTime) / 60000);
+                        db.ref('records/' + id).update({ 
+                            status: 'completed',
+                            completedAt: Date.now(),
+                            elapsedWhenCompleted: elapsed
+                        }).catch(err => alert('Hata: ' + err.message));
+                    } else {
+                        db.ref('records/' + id).update({ status: 'completed' })
+                            .catch(err => alert('Hata: ' + err.message));
+                    }
                 }
             });
         });
 
+        // Sil butonları (admin)
         if (isAdmin) {
             document.querySelectorAll('.delete-btn').forEach(btn => {
                 btn.addEventListener('click', function(e) {
@@ -984,6 +1024,7 @@
             });
         }
 
+        // Sıralama
         document.querySelectorAll('#recordsTable th[data-sort]').forEach(th => {
             th.style.cursor = 'pointer';
             th.addEventListener('click', function() {
@@ -1040,8 +1081,13 @@
         recordsToExport.forEach(rec => {
             let counterText = '-';
             if (rec.counter) {
-                if (rec.status === 'completed') counterText = `Tamamlandı (${rec.counter} dk)`;
-                else if (rec.status === 'expired') counterText = `Süre doldu`;
+                const startTime = rec.counterEnd - rec.counter * 60000;
+                let elapsed = Math.round((Date.now() - startTime) / 60000);
+                if (rec.status === 'completed' && rec.elapsedWhenCompleted !== null) {
+                    elapsed = rec.elapsedWhenCompleted;
+                }
+                if (rec.status === 'completed') counterText = `Tamamlandı (${elapsed} dk)`;
+                else if (rec.status === 'expired') counterText = `Süre doldu (${elapsed} dk)`;
                 else {
                     const remaining = Math.max(0, Math.round((rec.counterEnd - Date.now()) / 60000));
                     counterText = `${remaining} dk kaldı`;
