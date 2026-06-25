@@ -357,6 +357,17 @@
         .alarm-actions .edit-btn:hover { background: #e0a800; }
         .alarm-actions .delete-btn-sm { background: #dc3545; color: white; }
         .alarm-actions .delete-btn-sm:hover { background: #c82333; }
+        .simple-complete-btn {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: 0.15s;
+        }
+        .simple-complete-btn:hover { background: #218838; }
         @media (max-width: 700px) {
             .app-wrapper { padding: 16px; }
             .login-box { flex-direction: column; align-items: stretch; border-radius: 30px; padding: 24px; }
@@ -407,7 +418,7 @@
             <button class="tab-btn admin-only" data-tab="tab3">⏱️ Alarm Yönetimi</button>
         </div>
 
-        <!-- TAB 1: Kayıt Ekle - SADECE KAYIT EKLEME -->
+        <!-- TAB 1: Kayıt Ekle -->
         <div id="tab1" class="tab-content active">
             <div class="card">
                 <div class="row">
@@ -433,7 +444,7 @@
             </div>
         </div>
 
-        <!-- TAB 2: Kayıtlar - SADECE LİSTE, FİLTRE, EXCEL -->
+        <!-- TAB 2: Kayıtlar -->
         <div id="tab2" class="tab-content">
             <div class="filter-bar">
                 <div class="filter-group">
@@ -474,7 +485,7 @@
             </div>
         </div>
 
-        <!-- TAB 3: Alarm Yönetimi - SADECE BURADA SAYAÇ AYARLAMA -->
+        <!-- TAB 3: Alarm Yönetimi -->
         <div id="tab3" class="tab-content admin-only">
             <div class="card">
                 <h3 style="margin-bottom:16px; color:#1f3a57;">⏱️ Sayaç / Alarm Yönetimi</h3>
@@ -676,7 +687,7 @@
             group, sira, product, timestamp, date: dateStr, time: timeStr, user: currentUser,
             counter: counter || null,
             counterEnd: counterEnd || null,
-            status: counter ? 'active' : 'active',
+            status: 'active',
             completedAt: null,
             elapsedWhenCompleted: null
         };
@@ -968,14 +979,19 @@
                         }
                     }
                 }
+            } else {
+                // Sayaçsız kayıtlar için durum
+                if (rec.status === 'completed') {
+                    statusDisplay = '✅ Tamamlandı';
+                    statusClass = 'counter-completed';
+                }
             }
 
-            if (rec.counter && rec.status !== 'completed') {
+            // Tamamlandı butonu - TÜM KAYITLAR İÇİN (sayaçlı veya sayaçsız)
+            if (rec.status !== 'completed') {
                 btnHtml = `<button class="status-btn complete" data-id="${rec.id}">✅ Tamamlandı</button>`;
-            } else if (rec.counter && rec.status === 'completed') {
+            } else {
                 btnHtml = `<span style="color:#28a745;">✅ Tamamlandı</span>`;
-            } else if (rec.counter && rec.status === 'expired') {
-                btnHtml = `<button class="status-btn expired" data-id="${rec.id}">✅ Tamamlandı</button>`;
             }
 
             const checked = rec._checked ? 'checked' : '';
@@ -986,7 +1002,7 @@
                 <td>${rec.date || ''}</td>
                 <td>${rec.user || ''}</td>
                 <td><span class="counter-badge ${statusClass}">${counterDisplay}</span></td>
-                <td>${btnHtml || statusDisplay}</td>
+                <td>${btnHtml}</td>
                 <td class="delete-col admin-only">${isAdmin ? `<button class="delete-btn" data-id="${rec.id}" style="background:transparent; border:none; color:#b13e3e; font-size:18px; cursor:pointer;">🗑️</button>` : ''}</td>
             </tr>`;
         });
@@ -1001,12 +1017,14 @@
             });
         });
 
-        document.querySelectorAll('.status-btn.complete, .status-btn.expired').forEach(btn => {
+        // Tamamlandı butonu - TÜM KAYITLAR İÇİN
+        document.querySelectorAll('.status-btn.complete').forEach(btn => {
             btn.addEventListener('click', function() {
                 const id = this.dataset.id;
                 if (confirm('Bu ürünü tamamlandı olarak işaretlemek istediğinize emin misiniz?')) {
                     const rec = allRecords.find(r => r.id === id);
                     if (rec && rec.counter) {
+                        // Sayaçlı kayıt - elapsed hesapla
                         const startTime = rec.counterEnd - rec.counter * 60000;
                         const elapsed = Math.round((Date.now() - startTime) / 60000);
                         db.ref('records/' + id).update({ 
@@ -1015,8 +1033,11 @@
                             elapsedWhenCompleted: elapsed
                         }).catch(err => alert('Hata: ' + err.message));
                     } else {
-                        db.ref('records/' + id).update({ status: 'completed' })
-                            .catch(err => alert('Hata: ' + err.message));
+                        // Sayaçsız kayıt - sadece status güncelle
+                        db.ref('records/' + id).update({ 
+                            status: 'completed',
+                            completedAt: Date.now()
+                        }).catch(err => alert('Hata: ' + err.message));
                     }
                 }
             });
@@ -1103,8 +1124,10 @@
                     const remaining = Math.max(0, Math.round((rec.counterEnd - Date.now()) / 60000));
                     counterText = `${remaining} dk kaldı`;
                 }
+            } else {
+                if (rec.status === 'completed') counterText = 'Tamamlandı';
             }
-            const statusText = rec.status === 'active' ? 'Aktif' : rec.status === 'completed' ? 'Tamamlandı' : 'Süre Doldu';
+            const statusText = rec.status === 'completed' ? 'Tamamlandı' : 'Aktif';
             rows.push([rec.product, rec.time || '', rec.date || '', rec.user || '', counterText, statusText]);
         });
         let csv = rows.map(row => row.join(';')).join('\n');
