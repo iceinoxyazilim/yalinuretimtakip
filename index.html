@@ -353,10 +353,22 @@
             gap: 10px;
             margin: 4px;
         }
-        /* Alarm kartı sadece tab3 içinde gösterilecek */
-        #tab3 .card:last-of-type {
-            margin-top: 20px;
+        .alarm-actions {
+            display: flex;
+            gap: 6px;
         }
+        .alarm-actions button {
+            padding: 2px 10px;
+            border-radius: 12px;
+            border: none;
+            font-size: 12px;
+            cursor: pointer;
+            transition: 0.15s;
+        }
+        .alarm-actions .edit-btn { background: #ffc107; color: #212529; }
+        .alarm-actions .edit-btn:hover { background: #e0a800; }
+        .alarm-actions .delete-btn-sm { background: #dc3545; color: white; }
+        .alarm-actions .delete-btn-sm:hover { background: #c82333; }
         @media (max-width: 700px) {
             .app-wrapper { padding: 16px; }
             .login-box { flex-direction: column; align-items: stretch; border-radius: 30px; padding: 24px; }
@@ -407,7 +419,7 @@
             <button class="tab-btn admin-only" data-tab="tab3">⏱️ Alarm Yönetimi</button>
         </div>
 
-        <!-- TAB 1: Kayıt Ekle -->
+        <!-- TAB 1: Kayıt Ekle - Sadece kayıt ekleme -->
         <div id="tab1" class="tab-content active">
             <div class="card">
                 <div class="row">
@@ -433,7 +445,7 @@
             </div>
         </div>
 
-        <!-- TAB 2: Kayıtlar -->
+        <!-- TAB 2: Kayıtlar - Sadece liste, filtre ve excel -->
         <div id="tab2" class="tab-content">
             <div class="filter-bar">
                 <div class="filter-group">
@@ -474,7 +486,7 @@
             </div>
         </div>
 
-        <!-- TAB 3: Alarm Yönetimi (Sadece Admin) -->
+        <!-- TAB 3: Alarm Yönetimi - SADECE BURADA Sayaç ayarlama -->
         <div id="tab3" class="tab-content admin-only">
             <div class="card">
                 <h3 style="margin-bottom:16px; color:#1f3a57;">⏱️ Sayaç / Alarm Yönetimi</h3>
@@ -499,9 +511,6 @@
                     </div>
                     <div class="form-group" style="flex:0 0 auto;">
                         <button class="btn-warning" id="setAlarmBtn">⏱️ Kur/Güncelle</button>
-                    </div>
-                    <div class="form-group" style="flex:0 0 auto;">
-                        <button class="btn-danger-sm" id="deleteAlarmBtn">🗑️ Sayaç Sil</button>
                     </div>
                 </div>
                 <div style="margin-top:10px; color:#2f5a7a; font-size:14px;" id="alarmMessage"></div>
@@ -694,7 +703,7 @@
             });
     });
 
-    // ----- ALARM KUR / GÜNCELLE (ADMIN) -----
+    // ----- ALARM KUR / GÜNCELLE (ADMIN) - SADECE TAB3 -----
     document.getElementById('setAlarmBtn').addEventListener('click', function() {
         if (currentUser !== 'admin') {
             document.getElementById('alarmMessage').textContent = '⛔ Sadece admin yetkilidir.';
@@ -763,24 +772,12 @@
         }
     });
 
-    // ----- SAYAÇ SİL (ADMIN) -----
-    document.getElementById('deleteAlarmBtn').addEventListener('click', function() {
+    // ----- SAYAÇ SİL (ADMIN) - SADECE TAB3 -----
+    function deleteCounter(product) {
         if (currentUser !== 'admin') {
             document.getElementById('alarmMessage').textContent = '⛔ Sadece admin yetkilidir.';
             return;
         }
-        const group = document.getElementById('alarmGroupSelect').value;
-        const sira = parseInt(document.getElementById('alarmSiraInput').value);
-        if (!group) {
-            document.getElementById('alarmMessage').textContent = '⚠️ Grup seçin.';
-            return;
-        }
-        if (isNaN(sira) || sira < 1 || sira > 150) {
-            document.getElementById('alarmMessage').textContent = '⚠️ Sıra No 1-150 arasında olmalı.';
-            return;
-        }
-        const product = `${group}-${sira}`;
-        
         const recordsToUpdate = allRecords.filter(r => r.product === product && r.counter !== null);
         if (recordsToUpdate.length === 0) {
             document.getElementById('alarmMessage').textContent = `⚠️ ${product} için tanımlı sayaç bulunamadı.`;
@@ -800,13 +797,11 @@
         Promise.all(updatePromises)
             .then(() => {
                 document.getElementById('alarmMessage').textContent = `✅ ${product} için sayaç silindi.`;
-                document.getElementById('alarmSiraInput').value = '';
-                document.getElementById('alarmDurationInput').value = '';
             })
             .catch(err => {
                 document.getElementById('alarmMessage').textContent = `❌ Hata: ${err.message}`;
             });
-    });
+    }
 
     // ----- VERİ ÇEKME -----
     function fetchRecords() {
@@ -867,11 +862,33 @@
                 <strong>${r.product}</strong> 
                 <span style="color:#1f3a57;">${r.counter} dk</span>
                 <span style="font-size:13px; color:#5f7b9a;">${status}</span>
+                <span class="alarm-actions">
+                    <button class="edit-btn" onclick="editCounter('${r.product}')">✏️</button>
+                    <button class="delete-btn-sm" onclick="deleteCounter('${r.product}')">🗑️</button>
+                </span>
             </span>`;
         });
         html += '</div>';
         container.innerHTML = html;
     }
+
+    // ----- SAYAÇ DÜZENLE (ADMIN) -----
+    window.editCounter = function(product) {
+        const record = allRecords.find(r => r.product === product && r.counter !== null);
+        if (!record) {
+            document.getElementById('alarmMessage').textContent = `⚠️ ${product} için sayaç bulunamadı.`;
+            return;
+        }
+        // Form alanlarını doldur
+        const parts = product.split('-');
+        document.getElementById('alarmGroupSelect').value = parts[0];
+        document.getElementById('alarmSiraInput').value = parseInt(parts[1]);
+        document.getElementById('alarmDurationInput').value = record.counter;
+        document.getElementById('alarmMessage').textContent = `✏️ ${product} için düzenleme modu. Süreyi değiştirip "Kur/Güncelle" butonuna tıklayın.`;
+        // Focus
+        document.getElementById('alarmDurationInput').focus();
+        document.getElementById('alarmDurationInput').select();
+    };
 
     // ----- FİLTRE & SIRALAMA -----
     function applyFiltersAndRender() {
