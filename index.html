@@ -590,9 +590,26 @@
             loginOverlay.style.display = 'flex';
             mainContent.classList.remove('visible');
         }
+        // SessionStorage'a kullanıcı bilgisini kaydet (sayfa yenilemelerinde kalıcı olması için)
+        if (role) {
+            sessionStorage.setItem('currentUser', role);
+        } else {
+            sessionStorage.removeItem('currentUser');
+        }
         applyFiltersAndRender();
     }
 
+    // ----- SAYFA YENİLEMEDE KULLANICI KONTROLÜ -----
+    function checkSession() {
+        const savedUser = sessionStorage.getItem('currentUser');
+        if (savedUser && (savedUser === 'admin' || savedUser === 'personel')) {
+            setUser(savedUser);
+            return true;
+        }
+        return false;
+    }
+
+    // ----- GİRİŞ -----
     function handleLogin() {
         const user = loginUsername.value.trim();
         const pass = loginPassword.value.trim();
@@ -650,7 +667,6 @@
         const timeStr = now.toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
         const timestamp = now.getTime();
 
-        // Alarm (sayaç) tanımlı mı kontrol et - tüm kayıtlarda ara
         let counter = null;
         let counterEnd = null;
         const alarmRecord = allRecords.find(r => r.product === product && r.counter !== null && r.counter !== undefined);
@@ -703,11 +719,9 @@
         const now = Date.now();
         const endTime = now + duration * 60000;
 
-        // Bu ürün için mevcut kayıt var mı kontrol et (sayaç bilgisi için)
         const existing = allRecords.find(r => r.product === product);
         
         if (existing) {
-            // Var olan kaydı güncelle - completedAt ve elapsedWhenCompleted sıfırla
             db.ref('records/' + existing.id).update({
                 counter: duration,
                 counterEnd: endTime,
@@ -722,7 +736,6 @@
                 document.getElementById('alarmMessage').textContent = `❌ Hata: ${err.message}`;
             });
         } else {
-            // Yeni bir alarm kaydı oluştur (sadece sayaç bilgisi için)
             const now2 = new Date();
             const dateStr = now2.toLocaleDateString('tr-TR');
             const timeStr = now2.toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
@@ -918,13 +931,9 @@
                 const startTime = rec.counterEnd - rec.counter * 60000;
                 let elapsed = Math.round((now - startTime) / 60000);
                 
-                // Eğer tamamlanmışsa ve elapsedWhenCompleted varsa onu kullan
                 if (rec.status === 'completed' && rec.elapsedWhenCompleted !== null) {
                     elapsed = rec.elapsedWhenCompleted;
-                }
-                // Eğer tamamlanmışsa ve elapsedWhenCompleted yoksa hesapla
-                else if (rec.status === 'completed' && rec.elapsedWhenCompleted === null) {
-                    // Tamamlanma anındaki geçen süreyi hesapla
+                } else if (rec.status === 'completed' && rec.elapsedWhenCompleted === null) {
                     if (rec.completedAt) {
                         elapsed = Math.round((rec.completedAt - startTime) / 60000);
                     }
@@ -955,13 +964,11 @@
                 }
             }
 
-            // Butonlar: Eğer sayaç varsa ve tamamlanmadıysa
             if (rec.counter && rec.status !== 'completed') {
                 btnHtml = `<button class="status-btn complete" data-id="${rec.id}">✅ Tamamlandı</button>`;
             } else if (rec.counter && rec.status === 'completed') {
                 btnHtml = `<span style="color:#28a745;">✅ Tamamlandı</span>`;
             } else if (rec.counter && rec.status === 'expired') {
-                // Süre dolmuş ama tamamlanmamış - tamamlandı butonu göster
                 btnHtml = `<button class="status-btn expired" data-id="${rec.id}">✅ Tamamlandı</button>`;
             }
 
@@ -979,7 +986,6 @@
         });
         tbody.innerHTML = html;
 
-        // Checkbox olayları
         document.querySelectorAll('.row-checkbox').forEach(cb => {
             cb.addEventListener('change', function() {
                 const id = this.dataset.id;
@@ -989,7 +995,6 @@
             });
         });
 
-        // Tamamlandı butonları (hem active hem expired için)
         document.querySelectorAll('.status-btn.complete, .status-btn.expired').forEach(btn => {
             btn.addEventListener('click', function() {
                 const id = this.dataset.id;
@@ -1011,7 +1016,6 @@
             });
         });
 
-        // Sil butonları (admin)
         if (isAdmin) {
             document.querySelectorAll('.delete-btn').forEach(btn => {
                 btn.addEventListener('click', function(e) {
@@ -1024,7 +1028,6 @@
             });
         }
 
-        // Sıralama
         document.querySelectorAll('#recordsTable th[data-sort]').forEach(th => {
             th.style.cursor = 'pointer';
             th.addEventListener('click', function() {
@@ -1149,9 +1152,12 @@
         applyFiltersAndRender();
     }, 5000);
 
-    // ----- BAŞLAT -----
+    // ----- BAŞLAT: Önce session kontrol et, sonra verileri çek -----
+    const sessionActive = checkSession();
     fetchRecords();
-    setUser(null);
+    if (!sessionActive) {
+        setUser(null);
+    }
 </script>
 </body>
 </html>
