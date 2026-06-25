@@ -353,6 +353,10 @@
             gap: 10px;
             margin: 4px;
         }
+        /* Alarm kartı sadece tab3 içinde gösterilecek */
+        #tab3 .card:last-of-type {
+            margin-top: 20px;
+        }
         @media (max-width: 700px) {
             .app-wrapper { padding: 16px; }
             .login-box { flex-direction: column; align-items: stretch; border-radius: 30px; padding: 24px; }
@@ -502,9 +506,9 @@
                 </div>
                 <div style="margin-top:10px; color:#2f5a7a; font-size:14px;" id="alarmMessage"></div>
             </div>
-            <div style="margin-top:10px;">
-                <h4 style="color:#1f3a57; margin-bottom:8px;">📋 Tanımlı Sayaçlar</h4>
-                <div id="activeCountersList" style="background:#f9fcff; border-radius:16px; padding:16px;">
+            <div class="card">
+                <h4 style="color:#1f3a57; margin-bottom:12px;">📋 Tanımlı Sayaçlar</h4>
+                <div id="activeCountersList" style="background:#f9fcff; border-radius:16px; padding:8px;">
                     <p style="color:#6a7f98;">Yükleniyor...</p>
                 </div>
             </div>
@@ -532,7 +536,6 @@
     let filteredRecords = [];
     let sortField = 'timestamp';
     let sortAsc = false;
-    let counterIntervals = {};
 
     // DOM refs
     const loginOverlay = document.getElementById('loginOverlay');
@@ -590,7 +593,6 @@
             loginOverlay.style.display = 'flex';
             mainContent.classList.remove('visible');
         }
-        // SessionStorage'a kullanıcı bilgisini kaydet (sayfa yenilemelerinde kalıcı olması için)
         if (role) {
             sessionStorage.setItem('currentUser', role);
         } else {
@@ -641,8 +643,6 @@
         allRecords = [];
         filteredRecords = [];
         renderTable([]);
-        Object.values(counterIntervals).forEach(clearInterval);
-        counterIntervals = {};
     });
 
     // ----- KAYIT EKLE (Sayaç varsa otomatik alır) -----
@@ -839,7 +839,7 @@
         });
     }
 
-    // ----- AKTİF SAYAÇLARI GÖSTER -----
+    // ----- AKTİF SAYAÇLARI GÖSTER (sadece tab3) -----
     function updateActiveCounters() {
         const container = document.getElementById('activeCountersList');
         if (!container) return;
@@ -1152,7 +1152,7 @@
         applyFiltersAndRender();
     }, 5000);
 
-    // ----- BAŞLAT: Önce session kontrol et, sonra verileri çek -----
+    // ----- BAŞLAT -----
     const sessionActive = checkSession();
     fetchRecords();
     if (!sessionActive) {
