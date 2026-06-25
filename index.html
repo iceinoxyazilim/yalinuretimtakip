@@ -419,7 +419,7 @@
             <button class="tab-btn admin-only" data-tab="tab3">⏱️ Alarm Yönetimi</button>
         </div>
 
-        <!-- TAB 1: Kayıt Ekle - Sadece kayıt ekleme -->
+        <!-- TAB 1: Kayıt Ekle - SADECE KAYIT EKLEME -->
         <div id="tab1" class="tab-content active">
             <div class="card">
                 <div class="row">
@@ -445,7 +445,7 @@
             </div>
         </div>
 
-        <!-- TAB 2: Kayıtlar - Sadece liste, filtre ve excel -->
+        <!-- TAB 2: Kayıtlar - SADECE LİSTE, FİLTRE VE EXCEL -->
         <div id="tab2" class="tab-content">
             <div class="filter-bar">
                 <div class="filter-group">
@@ -486,7 +486,7 @@
             </div>
         </div>
 
-        <!-- TAB 3: Alarm Yönetimi - SADECE BURADA Sayaç ayarlama -->
+        <!-- TAB 3: Alarm Yönetimi - SADECE BURADA SAYAÇ AYARLAMA -->
         <div id="tab3" class="tab-content admin-only">
             <div class="card">
                 <h3 style="margin-bottom:16px; color:#1f3a57;">⏱️ Sayaç / Alarm Yönetimi</h3>
@@ -703,7 +703,7 @@
             });
     });
 
-    // ----- ALARM KUR / GÜNCELLE (ADMIN) - SADECE TAB3 -----
+    // ----- ALARM KUR / GÜNCELLE (SADECE ADMIN) -----
     document.getElementById('setAlarmBtn').addEventListener('click', function() {
         if (currentUser !== 'admin') {
             document.getElementById('alarmMessage').textContent = '⛔ Sadece admin yetkilidir.';
@@ -772,8 +772,8 @@
         }
     });
 
-    // ----- SAYAÇ SİL (ADMIN) - SADECE TAB3 -----
-    function deleteCounter(product) {
+    // ----- SAYAÇ SİL (ADMIN) -----
+    window.deleteCounter = function(product) {
         if (currentUser !== 'admin') {
             document.getElementById('alarmMessage').textContent = '⛔ Sadece admin yetkilidir.';
             return;
@@ -783,6 +783,8 @@
             document.getElementById('alarmMessage').textContent = `⚠️ ${product} için tanımlı sayaç bulunamadı.`;
             return;
         }
+
+        if (!confirm(`${product} için sayaç silinecek. Devam etmek istediğinize emin misiniz?`)) return;
 
         let updates = {};
         recordsToUpdate.forEach(rec => {
@@ -801,7 +803,23 @@
             .catch(err => {
                 document.getElementById('alarmMessage').textContent = `❌ Hata: ${err.message}`;
             });
-    }
+    };
+
+    // ----- SAYAÇ DÜZENLE (ADMIN) -----
+    window.editCounter = function(product) {
+        const record = allRecords.find(r => r.product === product && r.counter !== null);
+        if (!record) {
+            document.getElementById('alarmMessage').textContent = `⚠️ ${product} için sayaç bulunamadı.`;
+            return;
+        }
+        const parts = product.split('-');
+        document.getElementById('alarmGroupSelect').value = parts[0];
+        document.getElementById('alarmSiraInput').value = parseInt(parts[1]);
+        document.getElementById('alarmDurationInput').value = record.counter;
+        document.getElementById('alarmMessage').textContent = `✏️ ${product} için düzenleme modu. Süreyi değiştirip "Kur/Güncelle" butonuna tıklayın.`;
+        document.getElementById('alarmDurationInput').focus();
+        document.getElementById('alarmDurationInput').select();
+    };
 
     // ----- VERİ ÇEKME -----
     function fetchRecords() {
@@ -834,7 +852,7 @@
         });
     }
 
-    // ----- AKTİF SAYAÇLARI GÖSTER (sadece tab3) -----
+    // ----- AKTİF SAYAÇLARI GÖSTER (SADECE TAB3) -----
     function updateActiveCounters() {
         const container = document.getElementById('activeCountersList');
         if (!container) return;
@@ -855,13 +873,20 @@
         uniqueList.forEach(r => {
             const now = Date.now();
             const remaining = Math.max(0, Math.round((r.counterEnd - now) / 60000));
-            const status = r.status === 'completed' ? '✅ Tamamlandı' : 
-                          r.status === 'expired' ? '⏰ Süre Doldu' : 
-                          `${remaining} dk kaldı`;
+            let statusText = '';
+            if (r.status === 'completed') {
+                const elapsed = r.elapsedWhenCompleted || Math.round((r.completedAt - (r.counterEnd - r.counter * 60000)) / 60000);
+                statusText = `✅ Tamamlandı (${elapsed} dk)`;
+            } else if (r.status === 'expired') {
+                const elapsed = Math.round((now - (r.counterEnd - r.counter * 60000)) / 60000);
+                statusText = `⏰ Süre Doldu (${elapsed} dk)`;
+            } else {
+                statusText = `${remaining} dk kaldı`;
+            }
             html += `<span class="alarm-list-item">
                 <strong>${r.product}</strong> 
                 <span style="color:#1f3a57;">${r.counter} dk</span>
-                <span style="font-size:13px; color:#5f7b9a;">${status}</span>
+                <span style="font-size:13px; color:#5f7b9a;">${statusText}</span>
                 <span class="alarm-actions">
                     <button class="edit-btn" onclick="editCounter('${r.product}')">✏️</button>
                     <button class="delete-btn-sm" onclick="deleteCounter('${r.product}')">🗑️</button>
@@ -871,24 +896,6 @@
         html += '</div>';
         container.innerHTML = html;
     }
-
-    // ----- SAYAÇ DÜZENLE (ADMIN) -----
-    window.editCounter = function(product) {
-        const record = allRecords.find(r => r.product === product && r.counter !== null);
-        if (!record) {
-            document.getElementById('alarmMessage').textContent = `⚠️ ${product} için sayaç bulunamadı.`;
-            return;
-        }
-        // Form alanlarını doldur
-        const parts = product.split('-');
-        document.getElementById('alarmGroupSelect').value = parts[0];
-        document.getElementById('alarmSiraInput').value = parseInt(parts[1]);
-        document.getElementById('alarmDurationInput').value = record.counter;
-        document.getElementById('alarmMessage').textContent = `✏️ ${product} için düzenleme modu. Süreyi değiştirip "Kur/Güncelle" butonuna tıklayın.`;
-        // Focus
-        document.getElementById('alarmDurationInput').focus();
-        document.getElementById('alarmDurationInput').select();
-    };
 
     // ----- FİLTRE & SIRALAMA -----
     function applyFiltersAndRender() {
@@ -946,21 +953,16 @@
             if (rec.counter) {
                 const now = Date.now();
                 const startTime = rec.counterEnd - rec.counter * 60000;
-                let elapsed = Math.round((now - startTime) / 60000);
-                
-                if (rec.status === 'completed' && rec.elapsedWhenCompleted !== null) {
-                    elapsed = rec.elapsedWhenCompleted;
-                } else if (rec.status === 'completed' && rec.elapsedWhenCompleted === null) {
-                    if (rec.completedAt) {
-                        elapsed = Math.round((rec.completedAt - startTime) / 60000);
-                    }
-                }
+                let elapsed = 0;
                 
                 if (rec.status === 'completed') {
+                    // Tamamlandı - elapsedWhenCompleted kullan
+                    elapsed = rec.elapsedWhenCompleted || Math.round((rec.completedAt - startTime) / 60000);
                     counterDisplay = `✅ Tamamlandı (${elapsed} dk geçti)`;
                     statusDisplay = 'Tamamlandı';
                     statusClass = 'counter-completed';
                 } else if (rec.status === 'expired') {
+                    elapsed = Math.round((now - startTime) / 60000);
                     counterDisplay = `⏰ Süre doldu (${elapsed} dk geçti)`;
                     statusDisplay = 'Süre Doldu';
                     statusClass = 'counter-expired';
@@ -971,6 +973,7 @@
                         statusDisplay = 'Sayaç aktif';
                         statusClass = 'counter-active';
                     } else {
+                        elapsed = Math.round((now - startTime) / 60000);
                         counterDisplay = `⏰ Süre doldu (${elapsed} dk geçti)`;
                         statusDisplay = 'Süre Doldu';
                         statusClass = 'counter-expired';
@@ -1105,6 +1108,8 @@
                 let elapsed = Math.round((Date.now() - startTime) / 60000);
                 if (rec.status === 'completed' && rec.elapsedWhenCompleted !== null) {
                     elapsed = rec.elapsedWhenCompleted;
+                } else if (rec.status === 'completed' && rec.elapsedWhenCompleted === null && rec.completedAt) {
+                    elapsed = Math.round((rec.completedAt - startTime) / 60000);
                 }
                 if (rec.status === 'completed') counterText = `Tamamlandı (${elapsed} dk)`;
                 else if (rec.status === 'expired') counterText = `Süre doldu (${elapsed} dk)`;
