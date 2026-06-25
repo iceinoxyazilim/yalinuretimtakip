@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Yalın Üretim Takip</title>
+    <!-- Firebase SDK'ları -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f4f7fc;
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            max-width: 1400px;
+            width: 100%;
+            background: white;
+            border-radius: 28px;
+            box-shadow: 0 20px 40px -10px rgba(0,20,40,0.25);
+            padding: 24px 28px;
+        }
+        h1 {
+            font-weight: 500;
+            font-size: 26px;
+            color: #0b2b4a;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 18px;
+            border-bottom: 2px solid #e6edf5;
+            padding-bottom: 12px;
+        }
+        .login-area {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-bottom: 24px;
+            background: #f0f5fa;
+            padding: 10px 18px;
+            border-radius: 60px;
+        }
+        .login-area label {
+            font-weight: 500;
+            color: #1f3a57;
+        }
+        .login-area input {
+            border: 1px solid #ccdae8;
+            border-radius: 30px;
+            padding: 8px 16px;
+            font-size: 14px;
+            background: white;
+            width: 140px;
+        }
+        .login-area button {
+            background: #1f3a57;
+            border: none;
+            color: white;
+            padding: 8px 24px;
+            border-radius: 40px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.2s;
+            letter-spacing: 0.3px;
+        }
+        .login-area button:hover {
+            background: #2a4b70;
+            transform: scale(0.97);
+        }
+        .user-badge {
+            background: #dce6f0;
+            padding: 4px 18px;
+            border-radius: 50px;
+            font-weight: 500;
+            color: #0b2b4a;
+        }
+        .tabs {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 28px;
+            border-bottom: 2px solid #e0e9f2;
+            padding-bottom: 8px;
+        }
+        .tab-btn {
+            background: transparent;
+            border: none;
+            padding: 8px 28px;
+            font-size: 17px;
+            font-weight: 600;
+            color: #5f7b9a;
+            cursor: pointer;
+            border-radius: 40px;
+            transition: 0.2s;
+        }
+        .tab-btn.active {
+            background: #1f3a57;
+            color: white;
+        }
+        .tab-btn:not(.active):hover {
+            background: #e3ecf5;
+        }
+        .tab-content {
+            display: none;
+            animation: fade 0.2s;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        @keyframes fade { from { opacity:0.3; } to { opacity:1; } }
+
+        .card {
+            background: #f9fcff;
+            border-radius: 20px;
+            padding: 24px;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.02), 0 6px 12px rgba(0,20,40,0.05);
+        }
+
+        .row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 24px;
+            align-items: flex-end;
+        }
+        .form-group {
+            flex: 1 1 180px;
+            min-width: 150px;
+        }
+        .form-group label {
+            display: block;
+            font-weight: 500;
+            color: #1f3a57;
+            margin-bottom: 6px;
+            font-size: 14px;
+        }
+        .form-group select, .form-group input {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1px solid #cdddee;
+            border-radius: 30px;
+            background: white;
+            font-size: 15px;
+        }
+        .btn-primary {
+            background: #0f7b3a;
+            border: none;
+            color: white;
+            padding: 10px 30px;
+            border-radius: 40px;
+            font-weight: 600;
+            font-size: 15px;
+            cursor: pointer;
+            transition: 0.15s;
+            box-shadow: 0 4px 8px rgba(15, 123, 58, 0.15);
+        }
+        .btn-primary:hover { background: #0d6a30; transform: scale(0.98); }
+        .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+        .filter-bar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 14px 20px;
+            background: #eef4fa;
+            padding: 12px 20px;
+            border-radius: 60px;
+            margin-bottom: 24px;
+        }
+        .filter-bar .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .filter-bar label {
+            font-weight: 500;
+            color: #1f3a57;
+        }
+        .filter-bar input, .filter-bar select {
+            border: 1px solid #c8d9eb;
+            border-radius: 30px;
+            padding: 6px 16px;
+            background: white;
+        }
+        .btn-excel {
+            background: #1f7b4d;
+            border: none;
+            color: white;
+            padding: 6px 20px;
+            border-radius: 40px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: 0.15s;
+        }
+        .btn-excel:hover { background: #15643b; }
+        .btn-danger {
+            background: #b13e3e;
+            border: none;
+            color: white;
+            padding: 6px 18px;
+            border-radius: 40px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        .btn-danger:hover { background: #942f2f; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 18px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+        }
+        th {
+            background: #e3ecf5;
+            color: #1b3550;
+            font-weight: 600;
+            padding: 14px 12px;
+            text-align: left;
+            cursor: pointer;
+            user-select: none;
+        }
+        td {
+            padding: 12px 12px;
+            border-bottom: 1px solid #e8eef6;
+        }
+        tr:hover td { background: #f4f9ff; }
+        .clickable { cursor: pointer; }
+        .no-data { padding: 30px; text-align: center; color: #6a7f98; }
+
+        .checkbox-col { width: 40px; text-align: center; }
+        .delete-col { width: 60px; text-align: center; }
+        .admin-only { display: none; }
+        .is-admin .admin-only { display: table-cell; }
+
+        .footer-actions {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        /* small */
+        @media (max-width: 700px) {
+            .container { padding: 16px; }
+            .login-area { flex-direction: column; align-items: stretch; border-radius: 20px; }
+            .filter-bar { border-radius: 20px; flex-direction: column; align-items: stretch; }
+        }
+    </style>
+</head>
+<body>
+<div class="container" id="appContainer">
+    <h1>📋 Yalın Üretim Takip</h1>
+
+    <!-- Login / Kullanıcı -->
+    <div class="login-area" id="loginArea">
+        <span id="userDisplay" class="user-badge">👤 Çıkış yapıldı</span>
+        <label>Kullanıcı</label>
+        <input type="text" id="usernameInput" placeholder="admin / personel" value="admin">
+        <label>Şifre</label>
+        <input type="password" id="passwordInput" placeholder="•••••••">
+        <button id="loginBtn">🔑 Giriş</button>
+        <button id="logoutBtn" style="background:#6f8ba5;">🚪 Çıkış</button>
+    </div>
+
+    <!-- Sekmeler -->
+    <div class="tabs">
+        <button class="tab-btn active" data-tab="tab1">📝 Kayıt Ekle</button>
+        <button class="tab-btn" data-tab="tab2">📊 Kayıtlar</button>
+    </div>
+
+    <!-- TAB 1: Kayıt -->
+    <div id="tab1" class="tab-content active">
+        <div class="card">
+            <div class="row">
+                <div class="form-group">
+                    <label>Grup</label>
+                    <select id="groupSelect">
+                        <option value="">— Seçin —</option>
+                        <option value="T">T</option><option value="U">U</option><option value="V">V</option>
+                        <option value="D">D</option><option value="C">C</option><option value="BLC">BLC</option>
+                        <option value="MT">MT</option><option value="O">O</option><option value="GT">GT</option>
+                        <option value="SP">SP</option><option value="GD">GD</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Sıra No (1-150)</label>
+                    <input type="number" id="siraInput" min="1" max="150" placeholder="1-150">
+                </div>
+                <div class="form-group" style="flex:0 0 auto;">
+                    <button class="btn-primary" id="saveRecordBtn">✅ Kaydet</button>
+                </div>
+            </div>
+            <div style="margin-top:10px; color:#2f5a7a; font-size:14px;" id="saveMessage"></div>
+        </div>
+    </div>
+
+    <!-- TAB 2: Kayıtlar & Filtreler -->
+    <div id="tab2" class="tab-content">
+        <div class="filter-bar">
+            <div class="filter-group">
+                <label>📅 Tarih:</label>
+                <input type="date" id="filterDate">
+            </div>
+            <div class="filter-group">
+                <label>📦 Ürün (Grup+Sıra):</label>
+                <input type="text" id="filterProduct" placeholder="örn: T-42" style="width:140px;">
+            </div>
+            <div>
+                <button class="btn-excel" id="exportAllBtn">📤 Tümünü Excele Aktar</button>
+                <button class="btn-excel" id="exportSelectedBtn" style="background:#2a6b96;">📥 Seçilenleri Excele Aktar</button>
+                <button class="btn-danger" id="clearFiltersBtn">✖ Temizle</button>
+            </div>
+        </div>
+
+        <div style="overflow-x:auto;">
+            <table id="recordsTable">
+                <thead>
+                    <tr>
+                        <th class="checkbox-col"><input type="checkbox" id="selectAllCheckbox"></th>
+                        <th data-sort="product">Ürün (Grup+Sıra) ⬍</th>
+                        <th data-sort="timestamp">Kayıt Saati ⬍</th>
+                        <th data-sort="date">Tarih ⬍</th>
+                        <th data-sort="user">Kullanıcı ⬍</th>
+                        <th class="delete-col admin-only">Sil</th>
+                    </tr>
+                </thead>
+                <tbody id="recordsBody">
+                    <tr><td colspan="6" class="no-data">Yükleniyor veya kayıt yok</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="footer-actions">
+            <span style="color:#2b4f6e; font-size:14px;" id="recordCount">0 kayıt</span>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ----- FIREBASE KONFIG -----
+    const firebaseConfig = {
+        apiKey: "AIzaSyATKEa3xR_uybxRnjkFscIoGDQgJjcBGlg",
+        authDomain: "yuretimtakip.firebaseapp.com",
+        databaseURL: "https://yuretimtakip-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "yuretimtakip",
+        storageBucket: "yuretimtakip.firebasestorage.app",
+        messagingSenderId: "431035450549",
+        appId: "1:431035450549:web:61207d77f2c51d078eeafc"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // ----- GLOBAL STATE -----
+    let currentUser = null; // 'admin' veya 'personel'
+    let allRecords = [];    // tüm kayıtlar { id, group, sira, product, timestamp, date, user }
+    let sortField = 'timestamp';
+    let sortAsc = false;   // en son en üstte (desc) varsayılan
+    let filteredRecords = [];
+
+    // DOM refs
+    const loginArea = document.getElementById('loginArea');
+    const userDisplay = document.getElementById('userDisplay');
+    const usernameInput = document.getElementById('usernameInput');
+    const passwordInput = document.getElementById('passwordInput');
+    const loginBtn = document.getElementById('loginBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const groupSelect = document.getElementById('groupSelect');
+    const siraInput = document.getElementById('siraInput');
+    const saveRecordBtn = document.getElementById('saveRecordBtn');
+    const saveMessage = document.getElementById('saveMessage');
+    const recordsBody = document.getElementById('recordsBody');
+    const filterDate = document.getElementById('filterDate');
+    const filterProduct = document.getElementById('filterProduct');
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    const recordCount = document.getElementById('recordCount');
+    const appContainer = document.getElementById('appContainer');
+
+    // Sekme butonları
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            document.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
+            document.getElementById(this.dataset.tab).classList.add('active');
+            // tab2 geçişinde listeyi tazele
+            if (this.dataset.tab === 'tab2') applyFiltersAndRender();
+        });
+    });
+
+    // ----- YETKİ KONTROL -----
+    function setUser(userRole) {
+        currentUser = userRole;
+        if (userRole === 'admin') {
+            appContainer.classList.add('is-admin');
+            userDisplay.textContent = '👑 Admin';
+        } else if (userRole === 'personel') {
+            appContainer.classList.remove('is-admin');
+            userDisplay.textContent = '🧑‍💼 Personel';
+        } else {
+            appContainer.classList.remove('is-admin');
+            userDisplay.textContent = '👤 Çıkış yapıldı';
+            currentUser = null;
+        }
+        // admin butonlarını göster/gizle (css .admin-only)
+        // silme işlemleri tablo render'da kontrol edilecek
+        applyFiltersAndRender();
+    }
+
+    // ----- GİRİŞ / ÇIKIŞ -----
+    loginBtn.addEventListener('click', function() {
+        const user = usernameInput.value.trim();
+        const pass = passwordInput.value.trim();
+        if (user === 'admin' && pass === 'supervisor') {
+            setUser('admin');
+            saveMessage.textContent = '✅ Admin giriş başarılı';
+        } else if (user === 'personel' && pass === '2026ysg') {
+            setUser('personel');
+            saveMessage.textContent = '✅ Personel giriş başarılı';
+        } else {
+            saveMessage.textContent = '❌ Kullanıcı veya şifre hatalı';
+        }
+    });
+
+    logoutBtn.addEventListener('click', function() {
+        setUser(null);
+        usernameInput.value = '';
+        passwordInput.value = '';
+        saveMessage.textContent = 'Çıkış yapıldı.';
+    });
+
+    // ----- KAYIT EKLE -----
+    saveRecordBtn.addEventListener('click', function() {
+        if (!currentUser) {
+            saveMessage.textContent = '⛔ Lütfen önce giriş yapın.';
+            return;
+        }
+        const group = groupSelect.value;
+        const sira = parseInt(siraInput.value);
+        if (!group) {
+            saveMessage.textContent = '⚠️ Lütfen bir Grup seçin.';
+            return;
+        }
+        if (isNaN(sira) || sira < 1 || sira > 150) {
+            saveMessage.textContent = '⚠️ Sıra No 1-150 arasında olmalı.';
+            return;
+        }
+        const product = `${group}-${sira}`;
+        const now = new Date();
+        const dateStr = now.toLocaleDateString('tr-TR');
+        const timeStr = now.toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+        const timestamp = now.getTime();
+
+        const newRecord = {
+            group,
+            sira,
+            product,
+            timestamp,
+            date: dateStr,
+            time: timeStr,
+            user: currentUser
+        };
+
+        // Firebase push
+        const newRef = db.ref('records').push();
+        newRef.set(newRecord)
+            .then(() => {
+                saveMessage.textContent = `✅ Kaydedildi: ${product} - ${dateStr} ${timeStr}`;
+                siraInput.value = '';
+                // listeyi yenile
+                fetchRecords();
+            })
+            .catch(err => {
+                saveMessage.textContent = `❌ Hata: ${err.message}`;
+            });
+    });
+
+    // ----- VERİ ÇEKME -----
+    function fetchRecords() {
+        db.ref('records').orderByChild('timestamp').on('value', snapshot => {
+            const data = snapshot.val();
+            allRecords = [];
+            if (data) {
+                Object.keys(data).forEach(key => {
+                    const item = data[key];
+                    allRecords.push({
+                        id: key,
+                        group: item.group || '',
+                        sira: item.sira || '',
+                        product: item.product || '',
+                        timestamp: item.timestamp || 0,
+                        date: item.date || '',
+                        time: item.time || '',
+                        user: item.user || ''
+                    });
+                });
+            }
+            // varsayılan sıralama: en son en üstte (timestamp desc)
+            allRecords.sort((a,b) => b.timestamp - a.timestamp);
+            applyFiltersAndRender();
+        });
+    }
+
+    // ----- FİLTRELEME & SIRALAMA & RENDER -----
+    function applyFiltersAndRender() {
+        // filtre değerleri
+        const filterDateVal = filterDate.value;
+        const filterProductVal = filterProduct.value.trim().toUpperCase();
+
+        let filtered = allRecords.filter(rec => {
+            // tarih filtresi: rec.date format 'dd.mm.yyyy' -> input 'yyyy-mm-dd'
+            if (filterDateVal) {
+                const parts = rec.date.split('.');
+                if (parts.length === 3) {
+                    const recDate = `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
+                    if (recDate !== filterDateVal) return false;
+                } else return false;
+            }
+            // ürün filtresi (grup+sıra içerir)
+            if (filterProductVal) {
+                if (!rec.product.toUpperCase().includes(filterProductVal)) return false;
+            }
+            return true;
+        });
+
+        // sıralama (sortField, sortAsc)
+        filtered.sort((a,b) => {
+            let valA, valB;
+            if (sortField === 'product') { valA = a.product; valB = b.product; }
+            else if (sortField === 'timestamp') { valA = a.timestamp; valB = b.timestamp; }
+            else if (sortField === 'date') { valA = a.timestamp; valB = b.timestamp; } // timestamp ile
+            else if (sortField === 'user') { valA = a.user; valB = b.user; }
+            else { valA = a.timestamp; valB = b.timestamp; }
+            if (typeof valA === 'string') {
+                return sortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+            } else {
+                return sortAsc ? valA - valB : valB - valA;
+            }
+        });
+
+        filteredRecords = filtered;
+        renderTable(filtered);
+        recordCount.textContent = `${filtered.length} kayıt`;
+    }
+
+    // ----- TABLO RENDER -----
+    function renderTable(records) {
+        if (!records || records.length === 0) {
+            recordsBody.innerHTML = `<tr><td colspan="6" class="no-data">📭 Kayıt bulunamadı</td></tr>`;
+            return;
+        }
+        let html = '';
+        const isAdmin = (currentUser === 'admin');
+        records.forEach((rec, index) => {
+            const checked = rec._checked ? 'checked' : '';
+            html += `<tr>
+                <td class="checkbox-col"><input type="checkbox" class="row-checkbox" data-id="${rec.id}" ${checked}></td>
+                <td><strong>${rec.product}</strong></td>
+                <td>${rec.time || ''}</td>
+                <td>${rec.date || ''}</td>
+                <td>${rec.user || ''}</td>
+                <td class="delete-col admin-only">${isAdmin ? `<button class="delete-btn" data-id="${rec.id}" style="background:transparent; border:none; color:#b13e3e; font-size:18px; cursor:pointer;">🗑️</button>` : ''}</td>
+            </tr>`;
+        });
+        recordsBody.innerHTML = html;
+
+        // checkbox eventler
+        document.querySelectorAll('.row-checkbox').forEach(cb => {
+            cb.addEventListener('change', function() {
+                const id = this.dataset.id;
+                const rec = filteredRecords.find(r => r.id === id);
+                if (rec) rec._checked = this.checked;
+                updateSelectAllState();
+            });
+        });
+
+        // sil butonları (admin)
+        if (isAdmin) {
+            document.querySelectorAll('.delete-btn').forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const id = this.dataset.id;
+                    if (confirm('Bu kaydı silmek istediğinize emin misiniz?')) {
+                        db.ref('records/' + id).remove()
+                            .then(() => {
+                                // silindi, veri yeniden çekilecek (on value)
+                            })
+                            .catch(err => alert('Silme hatası: ' + err.message));
+                    }
+                });
+            });
+        }
+
+        // sıralama tıklama
+        document.querySelectorAll('#recordsTable th[data-sort]').forEach(th => {
+            th.style.cursor = 'pointer';
+            th.addEventListener('click', function() {
+                const field = this.dataset.sort;
+                if (sortField === field) {
+                    sortAsc = !sortAsc;
+                } else {
+                    sortField = field;
+                    sortAsc = (field === 'timestamp' || field === 'date') ? false : true;
+                }
+                applyFiltersAndRender();
+            });
+        });
+        updateSelectAllState();
+    }
+
+    function updateSelectAllState() {
+        const checkboxes = document.querySelectorAll('.row-checkbox');
+        const checked = document.querySelectorAll('.row-checkbox:checked');
+        if (checkboxes.length > 0 && checked.length === checkboxes.length) {
+            selectAllCheckbox.checked = true;
+        } else {
+            selectAllCheckbox.checked = false;
+        }
+    }
+
+    // select all
+    selectAllCheckbox.addEventListener('change', function() {
+        const checked = this.checked;
+        document.querySelectorAll('.row-checkbox').forEach(cb => {
+            cb.checked = checked;
+            const id = cb.dataset.id;
+            const rec = filteredRecords.find(r => r.id === id);
+            if (rec) rec._checked = checked;
+        });
+    });
+
+    // ----- FİLTRE OLAYLARI -----
+    filterDate.addEventListener('change', applyFiltersAndRender);
+    filterProduct.addEventListener('input', applyFiltersAndRender);
+
+    document.getElementById('clearFiltersBtn').addEventListener('click', function() {
+        filterDate.value = '';
+        filterProduct.value = '';
+        applyFiltersAndRender();
+    });
+
+    // ----- EXCEL AKTAR (tümü / seçili) -----
+    function exportToExcel(recordsToExport) {
+        if (!recordsToExport || recordsToExport.length === 0) {
+            alert('Aktarılacak kayıt yok.');
+            return;
+        }
+        // başlık
+        const rows = [['Ürün (Grup+Sıra)', 'Kayıt Saati', 'Tarih', 'Kullanıcı']];
+        recordsToExport.forEach(rec => {
+            rows.push([rec.product, rec.time || '', rec.date || '', rec.user || '']);
+        });
+        let csv = rows.map(row => row.join(';')).join('\n');
+        // BOM ile UTF-8
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', `uretim_kayitlari_${new Date().toISOString().slice(0,10)}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }
+
+    document.getElementById('exportAllBtn').addEventListener('click', function() {
+        if (!currentUser) { alert('Giriş yapmalısınız.'); return; }
+        // mevcut filtrelenmiş liste üzerinden
+        exportToExcel(filteredRecords);
+    });
+
+    document.getElementById('exportSelectedBtn').addEventListener('click', function() {
+        if (!currentUser) { alert('Giriş yapmalısınız.'); return; }
+        const selected = filteredRecords.filter(r => r._checked === true);
+        if (selected.length === 0) {
+            alert('Hiç kayıt seçilmedi.');
+            return;
+        }
+        exportToExcel(selected);
+    });
+
+    // ----- BAŞLAT -----
+    fetchRecords();
+    // default: logout
+    setUser(null);
+
+    // Arayüzde admin sütunları göster/gizle
+    // (css ile)
+</script>
+</body>
+</html>
