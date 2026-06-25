@@ -419,7 +419,7 @@
             <button class="tab-btn admin-only" data-tab="tab3">⏱️ Alarm Yönetimi</button>
         </div>
 
-        <!-- TAB 1: Kayıt Ekle - SADECE KAYIT EKLEME -->
+        <!-- TAB 1: Kayıt Ekle -->
         <div id="tab1" class="tab-content active">
             <div class="card">
                 <div class="row">
@@ -445,7 +445,7 @@
             </div>
         </div>
 
-        <!-- TAB 2: Kayıtlar - SADECE LİSTE, FİLTRE VE EXCEL -->
+        <!-- TAB 2: Kayıtlar -->
         <div id="tab2" class="tab-content">
             <div class="filter-bar">
                 <div class="filter-group">
@@ -486,7 +486,7 @@
             </div>
         </div>
 
-        <!-- TAB 3: Alarm Yönetimi - SADECE BURADA SAYAÇ AYARLAMA -->
+        <!-- TAB 3: Alarm Yönetimi -->
         <div id="tab3" class="tab-content admin-only">
             <div class="card">
                 <h3 style="margin-bottom:16px; color:#1f3a57;">⏱️ Sayaç / Alarm Yönetimi</h3>
@@ -557,7 +557,7 @@
     const userDisplay = document.getElementById('userDisplay');
     const appWrapper = document.getElementById('appWrapper');
 
-    // ----- HASH (şifreler kodda görünmez) -----
+    // ----- HASH -----
     function simpleHash(str) {
         let hash = 0;
         for (let i = 0; i < str.length; i++) {
@@ -610,7 +610,7 @@
         applyFiltersAndRender();
     }
 
-    // ----- SAYFA YENİLEMEDE KULLANICI KONTROLÜ -----
+    // ----- SESSION KONTROL -----
     function checkSession() {
         const savedUser = sessionStorage.getItem('currentUser');
         if (savedUser && (savedUser === 'admin' || savedUser === 'personel')) {
@@ -654,7 +654,7 @@
         renderTable([]);
     });
 
-    // ----- KAYIT EKLE (Sayaç varsa otomatik alır) -----
+    // ----- KAYIT EKLE -----
     document.getElementById('saveRecordBtn').addEventListener('click', function() {
         if (!currentUser) {
             document.getElementById('saveMessage').textContent = '⛔ Lütfen giriş yapın.';
@@ -703,7 +703,7 @@
             });
     });
 
-    // ----- ALARM KUR / GÜNCELLE (SADECE ADMIN) -----
+    // ----- ALARM KUR / GÜNCELLE -----
     document.getElementById('setAlarmBtn').addEventListener('click', function() {
         if (currentUser !== 'admin') {
             document.getElementById('alarmMessage').textContent = '⛔ Sadece admin yetkilidir.';
@@ -772,7 +772,7 @@
         }
     });
 
-    // ----- SAYAÇ SİL (ADMIN) -----
+    // ----- SAYAÇ SİL -----
     window.deleteCounter = function(product) {
         if (currentUser !== 'admin') {
             document.getElementById('alarmMessage').textContent = '⛔ Sadece admin yetkilidir.';
@@ -783,7 +783,6 @@
             document.getElementById('alarmMessage').textContent = `⚠️ ${product} için tanımlı sayaç bulunamadı.`;
             return;
         }
-
         if (!confirm(`${product} için sayaç silinecek. Devam etmek istediğinize emin misiniz?`)) return;
 
         let updates = {};
@@ -805,7 +804,7 @@
             });
     };
 
-    // ----- SAYAÇ DÜZENLE (ADMIN) -----
+    // ----- SAYAÇ DÜZENLE -----
     window.editCounter = function(product) {
         const record = allRecords.find(r => r.product === product && r.counter !== null);
         if (!record) {
@@ -852,7 +851,7 @@
         });
     }
 
-    // ----- AKTİF SAYAÇLARI GÖSTER (SADECE TAB3) -----
+    // ----- TANIMLI SAYAÇLARI GÖSTER -----
     function updateActiveCounters() {
         const container = document.getElementById('activeCountersList');
         if (!container) return;
@@ -956,8 +955,7 @@
                 let elapsed = 0;
                 
                 if (rec.status === 'completed') {
-                    // Tamamlandı - elapsedWhenCompleted kullan
-                    elapsed = rec.elapsedWhenCompleted || Math.round((rec.completedAt - startTime) / 60000);
+                    elapsed = rec.elapsedWhenCompleted !== null ? rec.elapsedWhenCompleted : Math.round((rec.completedAt - startTime) / 60000);
                     counterDisplay = `✅ Tamamlandı (${elapsed} dk geçti)`;
                     statusDisplay = 'Tamamlandı';
                     statusClass = 'counter-completed';
@@ -1161,7 +1159,7 @@
         });
     });
 
-    // ----- Sayaç kontrolü (periyodik) -----
+    // ----- SAYAÇ KONTROL -----
     setInterval(() => {
         const now = Date.now();
         allRecords.forEach(rec => {
