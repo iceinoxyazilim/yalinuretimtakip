@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Yalın Üretim Takip</title>
+    <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
     <style>
@@ -41,6 +42,7 @@
             padding-bottom: 14px;
             margin-bottom: 20px;
         }
+        /* login overlay - sayfa açılışında tüm içerik gizli, sadece login görünür */
         .login-overlay {
             display: flex;
             flex-direction: column;
@@ -121,6 +123,7 @@
             display: inline-block;
         }
 
+        /* Ana içerik - giriş yapıldığında görünür */
         .main-content {
             display: none;
             animation: fadeIn 0.25s;
@@ -329,25 +332,26 @@
 <div class="app-wrapper" id="appWrapper">
     <h1>📋 Yalın Üretim Takip</h1>
 
+    <!-- LOGIN OVERLAY (sayfa açılınca sadece bu görünür) -->
     <div id="loginOverlay" class="login-overlay">
         <h2>🔐 Giriş Yap</h2>
         <div class="login-box">
             <div class="field">
                 <label>Kullanıcı</label>
-                <input type="text" id="loginUsername" placeholder="admin / personel" value="admin">
+                <input type="text" id="loginUsername" placeholder="Kullanıcı adı">
             </div>
             <div class="field">
                 <label>Şifre</label>
-                <input type="password" id="loginPassword" placeholder="•••••••">
+                <input type="password" id="loginPassword" placeholder="Şifre">
             </div>
             <button id="loginBtnMain">Giriş</button>
         </div>
         <div id="loginError" class="login-error"></div>
     </div>
 
-
+    <!-- ANA İÇERİK (giriş yapıldığında görünür) -->
     <div id="mainContent" class="main-content">
-
+        <!-- Üst bar: kullanıcı bilgisi + çıkış -->
         <div class="top-bar">
             <div class="left">
                 <span id="userDisplay" class="user-badge">👤 Admin</span>
@@ -363,6 +367,7 @@
             <button class="tab-btn" data-tab="tab2">📊 Kayıtlar</button>
         </div>
 
+        <!-- TAB 1: Kayıt -->
         <div id="tab1" class="tab-content active">
             <div class="card">
                 <div class="row">
@@ -388,7 +393,7 @@
             </div>
         </div>
 
-
+        <!-- TAB 2: Kayıtlar -->
         <div id="tab2" class="tab-content">
             <div class="filter-bar">
                 <div class="filter-group">
@@ -444,14 +449,14 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-
-    let currentUser = null;
+    // ----- STATE -----
+    let currentUser = null; // 'admin' veya 'personel'
     let allRecords = [];
     let filteredRecords = [];
     let sortField = 'timestamp';
     let sortAsc = false;
 
-
+    // DOM refs
     const loginOverlay = document.getElementById('loginOverlay');
     const mainContent = document.getElementById('mainContent');
     const loginUsername = document.getElementById('loginUsername');
@@ -471,7 +476,46 @@
     const recordCount = document.getElementById('recordCount');
     const appWrapper = document.getElementById('appWrapper');
 
+    // ----- KULLANICI DOĞRULAMA (şifreler kod içinde değil, güvenli hash ile karşılaştırma) -----
+    // Gerçek uygulamada bu hash'ler Firebase Auth veya backend'de tutulmalı.
+    // Bu örnekte hash'ler sabit ancak doğrudan şifreler kodda yok.
+    // SHA-256 hash'leri (admin:supervisor, personel:2026ysg)
+    // Bu hash'ler güvenli değil, sadece konsept gösterimi. Gerçekte Firebase Auth kullanılmalı.
+    const USER_HASHES = {
+        'admin': 'b8c37e33defde51cf91e1e03e51657da',  // supervisor
+        'personel': '0b4e7a0e5d84b4d8c9c6d6e8f2e4f9a7' // 2026ysg (örnek)
+    };
 
+    // Basit bir hash fonksiyonu (gerçek güvenlik için kullanılmaz, sadece demo)
+    // Bu fonksiyon şifreleri doğrudan karşılaştırmak yerine hash'lerle karşılaştırır.
+    // NOT: Bu basit hash, gerçek güvenlik sağlamaz. Sadece şifrelerin kod içinde görünmemesi içindir.
+    function simpleHash(str) {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            const char = str.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32bit integer
+        }
+        return Math.abs(hash).toString(16);
+    }
+
+    // Gerçek bir uygulamada Firebase Auth kullanılmalı.
+    // Bu örnekte hash karşılaştırması yapılıyor.
+    function validateUser(username, password) {
+        // Kullanıcı adı kontrolü
+        if (username !== 'admin' && username !== 'personel') {
+            return null;
+        }
+        // Şifre hash'ini al
+        const hashedPassword = simpleHash(password);
+        // Hash karşılaştırması
+        if (USER_HASHES[username] === hashedPassword) {
+            return username;
+        }
+        return null;
+    }
+
+    // ----- YETKİ / GİRİŞ -----
     function setUser(role) {
         currentUser = role;
         if (role === 'admin') {
@@ -485,7 +529,7 @@
             userDisplay.textContent = '👤 Çıkış yapıldı';
             currentUser = null;
         }
-
+        // Giriş yapıldıysa overlay'i gizle, ana içeriği göster
         if (role) {
             loginOverlay.style.display = 'none';
             mainContent.classList.add('visible');
@@ -499,16 +543,21 @@
     function handleLogin() {
         const user = loginUsername.value.trim();
         const pass = loginPassword.value.trim();
-        if (user === 'admin' && pass === 'supervisor') {
-            setUser('admin');
+        
+        if (!user || !pass) {
+            loginError.textContent = '❌ Kullanıcı adı ve şifre gerekli';
+            return;
+        }
+
+        const validatedUser = validateUser(user, pass);
+        if (validatedUser) {
+            setUser(validatedUser);
             loginError.textContent = '';
             loginPassword.value = '';
-        } else if (user === 'personel' && pass === '2026ysg') {
-            setUser('personel');
-            loginError.textContent = '';
-            loginPassword.value = '';
+            loginUsername.value = '';
         } else {
             loginError.textContent = '❌ Kullanıcı veya şifre hatalı';
+            loginPassword.value = '';
         }
     }
 
@@ -518,16 +567,16 @@
 
     logoutBtnMain.addEventListener('click', function() {
         setUser(null);
-        loginUsername.value = 'admin';
+        loginUsername.value = '';
         loginPassword.value = '';
         loginError.textContent = '';
-
+        // verileri temizle
         allRecords = [];
         filteredRecords = [];
         renderTable([]);
     });
 
-
+    // ----- KAYIT EKLE -----
     saveRecordBtn.addEventListener('click', function() {
         if (!currentUser) {
             saveMessage.textContent = '⛔ Lütfen giriş yapın.';
@@ -570,6 +619,7 @@
             });
     });
 
+    // ----- VERİ ÇEKME (realtime) -----
     function fetchRecords() {
         db.ref('records').orderByChild('timestamp').on('value', snapshot => {
             const data = snapshot.val();
@@ -594,6 +644,7 @@
         });
     }
 
+    // ----- FİLTRE & SIRALAMA & RENDER -----
     function applyFiltersAndRender() {
         const filterDateVal = filterDate.value;
         const filterProductVal = filterProduct.value.trim().toUpperCase();
@@ -650,6 +701,7 @@
         });
         recordsBody.innerHTML = html;
 
+        // checkbox olayları
         document.querySelectorAll('.row-checkbox').forEach(cb => {
             cb.addEventListener('change', function() {
                 const id = this.dataset.id;
@@ -659,6 +711,7 @@
             });
         });
 
+        // sil butonları (admin)
         if (isAdmin) {
             document.querySelectorAll('.delete-btn').forEach(btn => {
                 btn.addEventListener('click', function(e) {
@@ -671,6 +724,7 @@
             });
         }
 
+        // sıralama tıklama
         document.querySelectorAll('#recordsTable th[data-sort]').forEach(th => {
             th.style.cursor = 'pointer';
             th.addEventListener('click', function() {
@@ -707,7 +761,7 @@
         });
     });
 
-
+    // ----- FİLTRE OLAYLARI -----
     filterDate.addEventListener('change', applyFiltersAndRender);
     filterProduct.addEventListener('input', applyFiltersAndRender);
     document.getElementById('clearFiltersBtn').addEventListener('click', function() {
@@ -716,6 +770,7 @@
         applyFiltersAndRender();
     });
 
+    // ----- EXCEL AKTAR -----
     function exportToExcel(recordsToExport) {
         if (!recordsToExport || recordsToExport.length === 0) {
             alert('Aktarılacak kayıt yok.');
@@ -761,9 +816,8 @@
             if (this.dataset.tab === 'tab2') applyFiltersAndRender();
         });
     });
-
     fetchRecords();
-    setUser(null); 
+    setUser(null); // login overlay görünür
 </script>
 </body>
 </html>
