@@ -230,6 +230,18 @@
             transition: 0.15s;
         }
         .btn-warning:hover { background: #b87718; transform: scale(0.98); }
+        .btn-danger-sm {
+            background: #b13e3e;
+            border: none;
+            color: white;
+            padding: 6px 16px;
+            border-radius: 40px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: 0.15s;
+            font-size: 13px;
+        }
+        .btn-danger-sm:hover { background: #942f2f; }
         .filter-bar {
             display: flex;
             flex-wrap: wrap;
@@ -330,6 +342,15 @@
         }
         .status-btn.complete { background: #28a745; color: white; }
         .status-btn.complete:hover { background: #218838; }
+        .alarm-list-item {
+            background: #e3ecf5;
+            padding: 6px 16px;
+            border-radius: 20px;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            margin: 4px;
+        }
         @media (max-width: 700px) {
             .app-wrapper { padding: 16px; }
             .login-box { flex-direction: column; align-items: stretch; border-radius: 30px; padding: 24px; }
@@ -377,7 +398,7 @@
         <div class="tabs">
             <button class="tab-btn active" data-tab="tab1">📝 Kayıt Ekle</button>
             <button class="tab-btn" data-tab="tab2">📊 Kayıtlar</button>
-            <button class="tab-btn admin-only" data-tab="tab3">⏱️ Alarm Kur</button>
+            <button class="tab-btn admin-only" data-tab="tab3">⏱️ Alarm Yönetimi</button>
         </div>
 
         <!-- TAB 1: Kayıt Ekle -->
@@ -447,10 +468,10 @@
             </div>
         </div>
 
-        <!-- TAB 3: Alarm Kur (Sadece Admin) -->
+        <!-- TAB 3: Alarm Yönetimi (Sadece Admin) -->
         <div id="tab3" class="tab-content admin-only">
             <div class="card">
-                <h3 style="margin-bottom:16px; color:#1f3a57;">⏱️ Alarm / Sayaç Kur</h3>
+                <h3 style="margin-bottom:16px; color:#1f3a57;">⏱️ Sayaç / Alarm Yönetimi</h3>
                 <div class="row">
                     <div class="form-group">
                         <label>Grup</label>
@@ -471,13 +492,16 @@
                         <input type="number" id="alarmDurationInput" min="1" max="5000" placeholder="1-5000 dk">
                     </div>
                     <div class="form-group" style="flex:0 0 auto;">
-                        <button class="btn-warning" id="setAlarmBtn">⏱️ Sayaç Kur</button>
+                        <button class="btn-warning" id="setAlarmBtn">⏱️ Kur/Güncelle</button>
+                    </div>
+                    <div class="form-group" style="flex:0 0 auto;">
+                        <button class="btn-danger-sm" id="deleteAlarmBtn">🗑️ Sayaç Sil</button>
                     </div>
                 </div>
                 <div style="margin-top:10px; color:#2f5a7a; font-size:14px;" id="alarmMessage"></div>
             </div>
             <div style="margin-top:10px;">
-                <h4 style="color:#1f3a57; margin-bottom:8px;">📋 Aktif Sayaçlar</h4>
+                <h4 style="color:#1f3a57; margin-bottom:8px;">📋 Tanımlı Sayaçlar</h4>
                 <div id="activeCountersList" style="background:#f9fcff; border-radius:16px; padding:16px;">
                     <p style="color:#6a7f98;">Yükleniyor...</p>
                 </div>
@@ -599,7 +623,7 @@
         renderTable([]);
     });
 
-    // ----- KAYIT EKLE -----
+    // ----- KAYIT EKLE (Sayaç varsa otomatik alır) -----
     document.getElementById('saveRecordBtn').addEventListener('click', function() {
         if (!currentUser) {
             document.getElementById('saveMessage').textContent = '⛔ Lütfen giriş yapın.';
@@ -621,13 +645,13 @@
         const timeStr = now.toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
         const timestamp = now.getTime();
 
-        // Alarm kurulmuş mu kontrol et
+        // Alarm (sayaç) tanımlı mı kontrol et - tüm kayıtlarda ara
         let counter = null;
         let counterEnd = null;
-        const existingAlarm = allRecords.find(r => r.product === product && r.counter);
-        if (existingAlarm) {
-            counter = existingAlarm.counter;
-            counterEnd = existingAlarm.counterEnd;
+        const alarmRecord = allRecords.find(r => r.product === product && r.counter !== null && r.counter !== undefined);
+        if (alarmRecord) {
+            counter = alarmRecord.counter;
+            counterEnd = alarmRecord.counterEnd;
         }
 
         const newRecord = {
@@ -639,7 +663,7 @@
 
         db.ref('records').push(newRecord)
             .then(() => {
-                document.getElementById('saveMessage').textContent = `✅ Kaydedildi: ${product} ${counter ? '(Sayaç aktif)' : ''}`;
+                document.getElementById('saveMessage').textContent = `✅ Kaydedildi: ${product} ${counter ? '(Sayaç: '+counter+' dk)' : ''}`;
                 document.getElementById('siraInput').value = '';
             })
             .catch(err => {
@@ -647,7 +671,7 @@
             });
     });
 
-    // ----- ALARM KUR (ADMIN) -----
+    // ----- ALARM KUR / GÜNCELLE (ADMIN) -----
     document.getElementById('setAlarmBtn').addEventListener('click', function() {
         if (currentUser !== 'admin') {
             document.getElementById('alarmMessage').textContent = '⛔ Sadece admin yetkilidir.';
@@ -672,7 +696,7 @@
         const now = Date.now();
         const endTime = now + duration * 60000;
 
-        // Önce bu ürün için mevcut kayıt var mı kontrol et
+        // Bu ürün için mevcut kayıt var mı kontrol et (sayaç bilgisi için)
         const existing = allRecords.find(r => r.product === product);
         
         if (existing) {
@@ -715,6 +739,53 @@
         }
     });
 
+    // ----- SAYAÇ SİL (ADMIN) -----
+    document.getElementById('deleteAlarmBtn').addEventListener('click', function() {
+        if (currentUser !== 'admin') {
+            document.getElementById('alarmMessage').textContent = '⛔ Sadece admin yetkilidir.';
+            return;
+        }
+        const group = document.getElementById('alarmGroupSelect').value;
+        const sira = parseInt(document.getElementById('alarmSiraInput').value);
+        if (!group) {
+            document.getElementById('alarmMessage').textContent = '⚠️ Grup seçin.';
+            return;
+        }
+        if (isNaN(sira) || sira < 1 || sira > 150) {
+            document.getElementById('alarmMessage').textContent = '⚠️ Sıra No 1-150 arasında olmalı.';
+            return;
+        }
+        const product = `${group}-${sira}`;
+        
+        // Bu ürünün tüm kayıtlarında sayaç bilgisini temizle
+        const recordsToUpdate = allRecords.filter(r => r.product === product && r.counter !== null);
+        if (recordsToUpdate.length === 0) {
+            document.getElementById('alarmMessage').textContent = `⚠️ ${product} için tanımlı sayaç bulunamadı.`;
+            return;
+        }
+
+        let updates = {};
+        recordsToUpdate.forEach(rec => {
+            updates[rec.id] = { counter: null, counterEnd: null, status: 'active' };
+        });
+
+        // Toplu güncelleme yap
+        const dbRef = db.ref('records');
+        const updatePromises = Object.keys(updates).map(key => {
+            return dbRef.child(key).update(updates[key]);
+        });
+
+        Promise.all(updatePromises)
+            .then(() => {
+                document.getElementById('alarmMessage').textContent = `✅ ${product} için sayaç silindi.`;
+                document.getElementById('alarmSiraInput').value = '';
+                document.getElementById('alarmDurationInput').value = '';
+            })
+            .catch(err => {
+                document.getElementById('alarmMessage').textContent = `❌ Hata: ${err.message}`;
+            });
+    });
+
     // ----- VERİ ÇEKME -----
     function fetchRecords() {
         db.ref('records').orderByChild('timestamp').on('value', snapshot => {
@@ -744,20 +815,36 @@
         });
     }
 
-    // ----- AKTİF SAYAÇLARI GÖSTER -----
+    // ----- AKTİF SAYAÇLARI GÖSTER (Tanımlı tüm sayaçlar) -----
     function updateActiveCounters() {
         const container = document.getElementById('activeCountersList');
         if (!container) return;
-        const active = allRecords.filter(r => r.counter && r.status === 'active');
-        if (active.length === 0) {
-            container.innerHTML = '<p style="color:#6a7f98;">Aktif sayaç yok.</p>';
+        // Tüm sayaç tanımları (counter null olmayanlar)
+        const counters = allRecords.filter(r => r.counter !== null && r.counter !== undefined);
+        // Benzersiz ürünler
+        const uniqueProducts = {};
+        counters.forEach(r => {
+            if (!uniqueProducts[r.product]) {
+                uniqueProducts[r.product] = r;
+            }
+        });
+        const uniqueList = Object.values(uniqueProducts);
+        
+        if (uniqueList.length === 0) {
+            container.innerHTML = '<p style="color:#6a7f98;">Tanımlı sayaç yok.</p>';
             return;
         }
-        let html = '<div style="display:flex; flex-wrap:wrap; gap:10px;">';
-        active.forEach(r => {
-            const remaining = Math.max(0, Math.round((r.counterEnd - Date.now()) / 60000));
-            html += `<span style="background:#e3ecf5; padding:4px 16px; border-radius:20px;">
-                <strong>${r.product}</strong> ${remaining} dk kaldı
+        let html = '<div style="display:flex; flex-wrap:wrap; gap:8px;">';
+        uniqueList.forEach(r => {
+            const now = Date.now();
+            const remaining = Math.max(0, Math.round((r.counterEnd - now) / 60000));
+            const status = r.status === 'completed' ? '✅ Tamamlandı' : 
+                          r.status === 'expired' ? '⏰ Süre Doldu' : 
+                          `${remaining} dk kaldı`;
+            html += `<span class="alarm-list-item">
+                <strong>${r.product}</strong> 
+                <span style="color:#1f3a57;">${r.counter} dk</span>
+                <span style="font-size:13px; color:#5f7b9a;">${status}</span>
             </span>`;
         });
         html += '</div>';
