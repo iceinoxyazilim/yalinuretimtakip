@@ -293,6 +293,7 @@
             cursor: pointer;
             user-select: none;
             position: relative;
+            white-space: nowrap;
         }
         th:hover {
             background: #d5e1ed;
@@ -366,13 +367,49 @@
         .alarm-actions .edit-btn:hover { background: #e0a800; }
         .alarm-actions .delete-btn-sm { background: #dc3545; color: white; }
         .alarm-actions .delete-btn-sm:hover { background: #c82333; }
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #e3ecf5;
+            border-top: 3px solid #1f3a57;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .status-filter {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .status-filter button {
+            padding: 4px 14px;
+            border-radius: 20px;
+            border: 1px solid #c8d9eb;
+            background: white;
+            cursor: pointer;
+            font-size: 13px;
+            transition: 0.15s;
+        }
+        .status-filter button.active {
+            background: #1f3a57;
+            color: white;
+            border-color: #1f3a57;
+        }
+        .status-filter button:hover:not(.active) {
+            background: #e3ecf5;
+        }
         @media (max-width: 700px) {
             .app-wrapper { padding: 16px; }
             .login-box { flex-direction: column; align-items: stretch; border-radius: 30px; padding: 24px; }
             .filter-bar { flex-direction: column; align-items: stretch; }
             .top-bar { flex-direction: column; align-items: stretch; }
-            table { font-size: 13px; }
-            th, td { padding: 8px 6px; }
+            table { font-size: 12px; }
+            th, td { padding: 6px 4px; }
         }
     </style>
 </head>
@@ -455,6 +492,15 @@
                     <label>📦 Ürün:</label>
                     <input type="text" id="filterProduct" placeholder="örn: T-42" style="width:140px;">
                 </div>
+                <div class="filter-group">
+                    <label>Durum:</label>
+                    <select id="filterStatus">
+                        <option value="">Tümü</option>
+                        <option value="active">Aktif</option>
+                        <option value="completed">Tamamlandı</option>
+                        <option value="expired">Süre Doldu</option>
+                    </select>
+                </div>
                 <div>
                     <button class="btn-excel" id="exportAllBtn">📤 Tümünü Excele Aktar</button>
                     <button class="btn-excel" id="exportSelectedBtn" style="background:#2a6b96;">📥 Seçilenleri Excele Aktar</button>
@@ -462,6 +508,9 @@
                 </div>
             </div>
             <div style="overflow-x:auto;">
+                <div id="loadingIndicator" style="display:none; padding:20px; text-align:center;">
+                    <span class="loading-spinner"></span> Yükleniyor...
+                </div>
                 <table id="recordsTable">
                     <thead>
                         <tr>
@@ -543,9 +592,13 @@
     let currentUser = null;
     let allRecords = [];
     let filteredRecords = [];
-    let sortField = 'status';  // Varsayılan sıralama status
-    let sortAsc = false;       // Varsayılan azalan (en yüksek gecikme üstte)
+    let sortField = 'status';
+    let sortAsc = false;
     let counterConfigs = {};
+    let renderTimeout = null;
+    let isRendering = false;
+    let lastRenderTime = 0;
+    let cachedStatusTexts = {};
 
     // DOM refs
     const loginOverlay = document.getElementById('loginOverlay');
@@ -557,6 +610,7 @@
     const logoutBtnMain = document.getElementById('logoutBtnMain');
     const userDisplay = document.getElementById('userDisplay');
     const appWrapper = document.getElementById('appWrapper');
+    const loadingIndicator = document.getElementById('loadingIndicator');
 
     // ----- HASH -----
     function simpleHash(str) {
@@ -809,7 +863,9 @@
                         counterEnd: item.counterEnd || null,
                         status: item.status || 'active',
                         completedAt: item.completedAt || null,
-                        delayMinutes: item.delayMinutes || null
+                        delayMinutes: item.delayMinutes || null,
+                        _statusText: null,
+                        _priority: null
                     });
                 });
             }
@@ -845,146 +901,186 @@
         container.innerHTML = html;
     }
 
-    // ----- SIRALAMA FONKSİYONU (Sayaç durumuna göre) -----
+    // ----- SIRALAMA FONKSİYONU (Optimize edilmiş) -----
     function getStatusPriority(rec) {
-        // Priority değeri: Daha yüksek = daha önce gösterilecek
-        // Süre doldu (gecikme yüksek) > Süre doldu (gecikme düşük) > Tamamlandı (süresinde) > Tamamlandı (az gecikmeli) > Tamamlandı (çok gecikmeli)
+        if (rec._priority !== null && rec._priority !== undefined) {
+            return rec._priority;
+        }
+        
+        let priority = 0;
         
         if (rec.status === 'expired') {
-            // Süre doldu - gecikmeyi hesapla
             if (rec.counterDuration && rec.counterEnd) {
                 const now = Date.now();
                 const startTime = rec.counterEnd - rec.counterDuration * 60000;
                 const elapsed = Math.round((now - startTime) / 60000);
-                return 1000 + elapsed; // 1000 + gecikme dakikası
-            }
-            return 1000;
-        }
-        
-        if (rec.status === 'completed') {
-            if (rec.delayMinutes && rec.delayMinutes > 0) {
-                // Tamamlandı ama gecikmeli - gecikme ne kadar yüksekse o kadar düşük priority
-                return 100 - rec.delayMinutes; // 100'den çıkararak küçük gecikmeleri öne al
+                priority = 1000 + elapsed;
             } else {
-                // Tamamlandı (süresinde)
-                return 200;
+                priority = 1000;
             }
-        }
-        
-        if (rec.status === 'active') {
-            // Aktif sayaçlar - kalan süreye göre
+        } else if (rec.status === 'completed') {
+            if (rec.delayMinutes && rec.delayMinutes > 0) {
+                priority = 100 - rec.delayMinutes;
+            } else {
+                priority = 200;
+            }
+        } else if (rec.status === 'active') {
             if (rec.counterDuration && rec.counterEnd) {
                 const now = Date.now();
                 const remaining = Math.max(0, Math.round((rec.counterEnd - now) / 60000));
-                return 300 + remaining; // Kalan süreye göre
+                priority = 300 + remaining;
+            } else {
+                priority = 300;
             }
-            return 300;
         }
         
-        return 0;
+        rec._priority = priority;
+        return priority;
     }
 
-    // ----- FİLTRE & SIRALAMA -----
-    function applyFiltersAndRender() {
-        const filterDateVal = document.getElementById('filterDate').value;
-        const filterProductVal = document.getElementById('filterProduct').value.trim().toUpperCase();
-
-        let filtered = allRecords.filter(rec => {
-            if (filterDateVal) {
-                const parts = rec.date.split('.');
-                if (parts.length === 3) {
-                    const recDate = `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
-                    if (recDate !== filterDateVal) return false;
-                } else return false;
-            }
-            if (filterProductVal) {
-                if (!rec.product.toUpperCase().includes(filterProductVal)) return false;
-            }
-            return true;
-        });
-
-        // Sıralama
-        filtered.sort((a, b) => {
-            let valA, valB;
+    // ----- STATUS TEXT (Cache'li) -----
+    function getStatusText(rec) {
+        if (rec._statusText) return rec._statusText;
+        
+        let text = '-';
+        let cssClass = 'counter-active';
+        
+        if (rec.counterDuration !== null && rec.counterDuration !== undefined) {
+            const now = Date.now();
+            const startTime = rec.counterEnd - rec.counterDuration * 60000;
             
-            if (sortField === 'status') {
-                valA = getStatusPriority(a);
-                valB = getStatusPriority(b);
-                return sortAsc ? valA - valB : valB - valA;
-            } else if (sortField === 'product') {
-                valA = a.product;
-                valB = b.product;
-                return sortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
-            } else if (sortField === 'timestamp') {
-                valA = a.timestamp;
-                valB = b.timestamp;
-                return sortAsc ? valA - valB : valB - valA;
-            } else if (sortField === 'date') {
-                valA = a.timestamp;
-                valB = b.timestamp;
-                return sortAsc ? valA - valB : valB - valA;
-            } else if (sortField === 'user') {
-                valA = a.user;
-                valB = b.user;
-                return sortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
-            } else {
-                return 0;
+            if (rec.status === 'completed') {
+                if (rec.delayMinutes !== null && rec.delayMinutes > 0) {
+                    if (rec.delayMinutes <= 5) {
+                        text = `✅ Tamamlandı (${rec.delayMinutes} dk gecikti)`;
+                        cssClass = 'counter-completed-delay';
+                    } else {
+                        text = `✅ Tamamlandı (${rec.delayMinutes} dk gecikti)`;
+                        cssClass = 'counter-completed-high-delay';
+                    }
+                } else {
+                    text = `✅ Tamamlandı`;
+                    cssClass = 'counter-completed';
+                }
+            } else if (rec.counterEnd && now > rec.counterEnd) {
+                const elapsed = Math.round((now - startTime) / 60000);
+                text = `⏰ Süre doldu (${elapsed} dk)`;
+                cssClass = 'counter-expired';
+                if (rec.status !== 'expired') {
+                    db.ref('records/' + rec.id).update({ status: 'expired' });
+                }
+            } else if (rec.counterEnd) {
+                const remaining = Math.max(0, Math.round((rec.counterEnd - now) / 60000));
+                text = `⏱️ ${remaining} dk kaldı`;
+                cssClass = 'counter-active';
             }
-        });
-
-        filteredRecords = filtered;
-        renderTable(filtered);
-        document.getElementById('recordCount').textContent = `${filtered.length} kayıt`;
-        updateActiveCounters();
+        }
+        
+        rec._statusText = { text, cssClass };
+        return rec._statusText;
     }
 
-    // ----- TABLO RENDER -----
+    // ----- FİLTRE & SIRALAMA (Optimize edilmiş) -----
+    function applyFiltersAndRender() {
+        // Debounce - hızlı tıklamalarda son tıklama işleme alınsın
+        if (renderTimeout) {
+            clearTimeout(renderTimeout);
+        }
+        
+        renderTimeout = setTimeout(() => {
+            const filterDateVal = document.getElementById('filterDate').value;
+            const filterProductVal = document.getElementById('filterProduct').value.trim().toUpperCase();
+            const filterStatusVal = document.getElementById('filterStatus').value;
+
+            let filtered = allRecords.filter(rec => {
+                if (filterDateVal) {
+                    const parts = rec.date.split('.');
+                    if (parts.length === 3) {
+                        const recDate = `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
+                        if (recDate !== filterDateVal) return false;
+                    } else return false;
+                }
+                if (filterProductVal) {
+                    if (!rec.product.toUpperCase().includes(filterProductVal)) return false;
+                }
+                if (filterStatusVal) {
+                    if (rec.status !== filterStatusVal) return false;
+                }
+                return true;
+            });
+
+            // Cache'leri temizle (sadece filtre değiştiğinde)
+            filtered.forEach(rec => {
+                rec._priority = null;
+                rec._statusText = null;
+            });
+
+            // Sıralama
+            filtered.sort((a, b) => {
+                let valA, valB;
+                
+                if (sortField === 'status') {
+                    valA = getStatusPriority(a);
+                    valB = getStatusPriority(b);
+                    return sortAsc ? valA - valB : valB - valA;
+                } else if (sortField === 'product') {
+                    valA = a.product;
+                    valB = b.product;
+                    return sortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+                } else if (sortField === 'timestamp') {
+                    valA = a.timestamp;
+                    valB = b.timestamp;
+                    return sortAsc ? valA - valB : valB - valA;
+                } else if (sortField === 'date') {
+                    valA = a.timestamp;
+                    valB = b.timestamp;
+                    return sortAsc ? valA - valB : valB - valA;
+                } else if (sortField === 'user') {
+                    valA = a.user;
+                    valB = b.user;
+                    return sortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+                } else {
+                    return 0;
+                }
+            });
+
+            filteredRecords = filtered;
+            renderTable(filtered);
+            document.getElementById('recordCount').textContent = `${filtered.length} kayıt`;
+            updateActiveCounters();
+            renderTimeout = null;
+        }, 100); // 100ms debounce
+    }
+
+    // ----- TABLO RENDER (Optimize edilmiş - DOM manipülasyonu azaltıldı) -----
     function renderTable(records) {
         const tbody = document.getElementById('recordsBody');
+        
+        // Yükleniyor göster
+        if (isRendering) return;
+        isRendering = true;
+        
         if (!records || records.length === 0) {
             tbody.innerHTML = `<tr><td colspan="8" class="no-data">📭 Kayıt bulunamadı</td></tr>`;
+            isRendering = false;
             return;
         }
+        
         const isAdmin = (currentUser === 'admin');
         let html = '';
-        records.forEach((rec) => {
-            let counterDisplay = '-';
-            let statusClass = 'counter-active';
+        const now = Date.now();
+        
+        // Batch işleme - her seferinde 50 kayıt işle
+        const batchSize = 50;
+        const totalRecords = records.length;
+        
+        for (let i = 0; i < totalRecords; i++) {
+            const rec = records[i];
+            const statusInfo = getStatusText(rec);
+            const counterDisplay = statusInfo.text;
+            const statusClass = statusInfo.cssClass;
+            
             let btnHtml = '';
-
-            // Sayaç durumunu hesapla
-            if (rec.counterDuration !== null && rec.counterDuration !== undefined) {
-                const now = Date.now();
-                const startTime = rec.counterEnd - rec.counterDuration * 60000;
-                
-                if (rec.status === 'completed') {
-                    if (rec.delayMinutes !== null && rec.delayMinutes > 0) {
-                        if (rec.delayMinutes <= 5) {
-                            counterDisplay = `✅ Tamamlandı (${rec.delayMinutes} dk gecikti)`;
-                            statusClass = 'counter-completed-delay';
-                        } else {
-                            counterDisplay = `✅ Tamamlandı (${rec.delayMinutes} dk gecikti)`;
-                            statusClass = 'counter-completed-high-delay';
-                        }
-                    } else {
-                        counterDisplay = `✅ Tamamlandı`;
-                        statusClass = 'counter-completed';
-                    }
-                } else if (rec.counterEnd && now > rec.counterEnd) {
-                    const elapsed = Math.round((now - startTime) / 60000);
-                    counterDisplay = `⏰ Süre doldu (${elapsed} dk)`;
-                    statusClass = 'counter-expired';
-                    if (rec.status !== 'expired') {
-                        db.ref('records/' + rec.id).update({ status: 'expired' });
-                    }
-                } else if (rec.counterEnd) {
-                    const remaining = Math.max(0, Math.round((rec.counterEnd - now) / 60000));
-                    counterDisplay = `⏱️ ${remaining} dk kaldı`;
-                    statusClass = 'counter-active';
-                }
-            }
-
-            // Tamamlandı butonu
             if (rec.status !== 'completed') {
                 btnHtml = `<button class="status-btn complete" data-id="${rec.id}">✅ Tamamlandı</button>`;
             } else {
@@ -1002,9 +1098,13 @@
                 <td>${btnHtml}</td>
                 <td class="delete-col admin-only">${isAdmin ? `<button class="delete-btn" data-id="${rec.id}" style="background:transparent; border:none; color:#b13e3e; font-size:18px; cursor:pointer;">🗑️</button>` : ''}</td>
             </tr>`;
-        });
+        }
+        
         tbody.innerHTML = html;
+        isRendering = false;
 
+        // Event listener'ları tek seferde ekle (delegation)
+        // Checkbox'lar için
         document.querySelectorAll('.row-checkbox').forEach(cb => {
             cb.addEventListener('change', function() {
                 const id = this.dataset.id;
@@ -1014,21 +1114,21 @@
             });
         });
 
-        // Tamamlandı butonu
+        // Tamamlandı butonları
         document.querySelectorAll('.status-btn.complete').forEach(btn => {
             btn.addEventListener('click', function() {
                 const id = this.dataset.id;
                 if (confirm('Bu ürünü tamamlandı olarak işaretlemek istediğinize emin misiniz?')) {
                     const rec = allRecords.find(r => r.id === id);
                     if (rec && rec.counterDuration !== null && rec.counterDuration !== undefined) {
-                        const now = Date.now();
+                        const now2 = Date.now();
                         let delayMinutes = null;
-                        if (rec.counterEnd && now > rec.counterEnd) {
-                            delayMinutes = Math.round((now - rec.counterEnd) / 60000);
+                        if (rec.counterEnd && now2 > rec.counterEnd) {
+                            delayMinutes = Math.round((now2 - rec.counterEnd) / 60000);
                         }
                         db.ref('records/' + id).update({ 
                             status: 'completed',
-                            completedAt: now,
+                            completedAt: now2,
                             delayMinutes: delayMinutes
                         }).catch(err => alert('Hata: ' + err.message));
                     } else {
@@ -1063,7 +1163,6 @@
                     sortAsc = !sortAsc;
                 } else {
                     sortField = field;
-                    // Status için varsayılan azalan, diğerleri için artan
                     sortAsc = (field === 'status') ? false : true;
                 }
                 // Sıralama göstergesini güncelle
@@ -1080,13 +1179,11 @@
 
         // Varsayılan sıralama göstergesini ayarla
         const defaultTh = document.querySelector('#recordsTable th[data-sort="status"]');
-        if (defaultTh) {
-            const indicator = defaultTh.querySelector('.sort-indicator') || document.createElement('span');
+        if (defaultTh && !defaultTh.querySelector('.sort-indicator')) {
+            const indicator = document.createElement('span');
             indicator.className = 'sort-indicator';
             indicator.textContent = ' ▼';
-            if (!defaultTh.querySelector('.sort-indicator')) {
-                defaultTh.appendChild(indicator);
-            }
+            defaultTh.appendChild(indicator);
         }
 
         updateSelectAllState();
@@ -1116,9 +1213,11 @@
     // ----- FİLTRE OLAYLARI -----
     document.getElementById('filterDate').addEventListener('change', applyFiltersAndRender);
     document.getElementById('filterProduct').addEventListener('input', applyFiltersAndRender);
+    document.getElementById('filterStatus').addEventListener('change', applyFiltersAndRender);
     document.getElementById('clearFiltersBtn').addEventListener('click', function() {
         document.getElementById('filterDate').value = '';
         document.getElementById('filterProduct').value = '';
+        document.getElementById('filterStatus').value = '';
         applyFiltersAndRender();
     });
 
@@ -1130,30 +1229,8 @@
         }
         const rows = [['Ürün', 'Kayıt Saati', 'Tarih', 'Kullanıcı', 'Sayaç Durumu']];
         recordsToExport.forEach(rec => {
-            let counterText = '-';
-            if (rec.counterDuration !== null && rec.counterDuration !== undefined) {
-                if (rec.status === 'completed') {
-                    if (rec.delayMinutes && rec.delayMinutes > 0) {
-                        counterText = `Tamamlandı (${rec.delayMinutes} dk gecikti)`;
-                    } else {
-                        counterText = 'Tamamlandı';
-                    }
-                } else if (rec.status === 'expired') {
-                    const now = Date.now();
-                    const startTime = rec.counterEnd - rec.counterDuration * 60000;
-                    const elapsed = Math.round((now - startTime) / 60000);
-                    counterText = `Süre doldu (${elapsed} dk)`;
-                } else {
-                    const now = Date.now();
-                    if (rec.counterEnd) {
-                        const remaining = Math.max(0, Math.round((rec.counterEnd - now) / 60000));
-                        counterText = `${remaining} dk kaldı`;
-                    } else {
-                        counterText = 'Aktif';
-                    }
-                }
-            }
-            rows.push([rec.product, rec.time || '', rec.date || '', rec.user || '', counterText]);
+            const statusInfo = getStatusText(rec);
+            rows.push([rec.product, rec.time || '', rec.date || '', rec.user || '', statusInfo.text]);
         });
         let csv = rows.map(row => row.join(';')).join('\n');
         const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -1195,24 +1272,37 @@
         });
     });
 
-    // ----- SAYAÇ KONTROL -----
-    setInterval(() => {
-        const now = Date.now();
-        allRecords.forEach(rec => {
-            if (rec.counterDuration !== null && rec.counterDuration !== undefined && 
-                rec.status === 'active' && rec.counterEnd) {
-                if (now > rec.counterEnd) {
+    // ----- SAYAÇ KONTROL (Optimize edilmiş - sadece ihtiyaç duyulanları kontrol et) -----
+    let expireCheckInterval = null;
+    
+    function startExpireCheck() {
+        if (expireCheckInterval) clearInterval(expireCheckInterval);
+        expireCheckInterval = setInterval(() => {
+            const now = Date.now();
+            let hasChanges = false;
+            
+            // Sadece aktif ve counter'ı olan kayıtları kontrol et
+            allRecords.forEach(rec => {
+                if (rec.counterDuration !== null && rec.counterDuration !== undefined && 
+                    rec.status === 'active' && rec.counterEnd && now > rec.counterEnd) {
+                    hasChanges = true;
                     db.ref('records/' + rec.id).update({ status: 'expired' });
                 }
+            });
+            
+            // Eğer değişiklik varsa render'ı güncelle
+            if (hasChanges) {
+                // Render'ı geciktir - çok fazla güncellemeyi önle
+                setTimeout(() => applyFiltersAndRender(), 500);
             }
-        });
-        applyFiltersAndRender();
-    }, 5000);
+        }, 10000); // 10 saniyede bir kontrol et (5'ten 10'a çıkarıldı)
+    }
 
     // ----- BAŞLAT -----
     const sessionActive = checkSession();
     fetchRecords();
     loadCounterConfigs();
+    startExpireCheck();
     if (!sessionActive) {
         setUser(null);
     }
