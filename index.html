@@ -653,7 +653,7 @@
         renderTable([]);
     });
 
-    // ----- KAYIT EKLE -----
+    // ----- KAYIT EKLE (Sadece kayıt ekler, sayaç bilgisi taşımaz) -----
     document.getElementById('saveRecordBtn').addEventListener('click', function() {
         if (!currentUser) {
             document.getElementById('saveMessage').textContent = '⛔ Lütfen giriş yapın.';
@@ -675,18 +675,11 @@
         const timeStr = now.toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
         const timestamp = now.getTime();
 
-        let counter = null;
-        let counterEnd = null;
-        const alarmRecord = allRecords.find(r => r.product === product && r.counter !== null && r.counter !== undefined);
-        if (alarmRecord) {
-            counter = alarmRecord.counter;
-            counterEnd = alarmRecord.counterEnd;
-        }
-
+        // Sadece yeni kayıt ekle - sayaç bilgisi taşıma
         const newRecord = {
             group, sira, product, timestamp, date: dateStr, time: timeStr, user: currentUser,
-            counter: counter || null,
-            counterEnd: counterEnd || null,
+            counter: null,
+            counterEnd: null,
             status: 'active',
             completedAt: null,
             elapsedWhenCompleted: null
@@ -694,7 +687,7 @@
 
         db.ref('records').push(newRecord)
             .then(() => {
-                document.getElementById('saveMessage').textContent = `✅ Kaydedildi: ${product} ${counter ? '(Sayaç: '+counter+' dk)' : ''}`;
+                document.getElementById('saveMessage').textContent = `✅ Kaydedildi: ${product}`;
                 document.getElementById('siraInput').value = '';
             })
             .catch(err => {
@@ -727,10 +720,12 @@
         const now = Date.now();
         const endTime = now + duration * 60000;
 
-        const existing = allRecords.find(r => r.product === product);
-        
-        if (existing) {
-            db.ref('records/' + existing.id).update({
+        // Önce bu ürün için mevcut aktif sayaç kaydını bul
+        const existingCounter = allRecords.find(r => r.product === product && r.counter !== null && r.counter !== undefined && r.status !== 'completed');
+
+        if (existingCounter) {
+            // Mevcut sayaç kaydını güncelle
+            db.ref('records/' + existingCounter.id).update({
                 counter: duration,
                 counterEnd: endTime,
                 status: 'active',
@@ -744,6 +739,7 @@
                 document.getElementById('alarmMessage').textContent = `❌ Hata: ${err.message}`;
             });
         } else {
+            // Yeni sayaç kaydı oluştur
             const now2 = new Date();
             const dateStr = now2.toLocaleDateString('tr-TR');
             const timeStr = now2.toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
@@ -805,7 +801,7 @@
 
     // ----- SAYAÇ DÜZENLE (ADMIN) -----
     window.editCounter = function(product) {
-        const record = allRecords.find(r => r.product === product && r.counter !== null);
+        const record = allRecords.find(r => r.product === product && r.counter !== null && r.counter !== undefined);
         if (!record) {
             document.getElementById('alarmMessage').textContent = `⚠️ ${product} için sayaç bulunamadı.`;
             return;
@@ -854,7 +850,8 @@
     function updateActiveCounters() {
         const container = document.getElementById('activeCountersList');
         if (!container) return;
-        const counters = allRecords.filter(r => r.counter !== null && r.counter !== undefined);
+        // Sadece aktif sayaçları göster (tamamlanmamış ve süresi dolmamış)
+        const counters = allRecords.filter(r => r.counter !== null && r.counter !== undefined && r.status !== 'completed');
         const uniqueProducts = {};
         counters.forEach(r => {
             if (!uniqueProducts[r.product]) {
@@ -872,10 +869,7 @@
             const now = Date.now();
             const remaining = Math.max(0, Math.round((r.counterEnd - now) / 60000));
             let statusText = '';
-            if (r.status === 'completed') {
-                const elapsed = r.elapsedWhenCompleted || Math.round((r.completedAt - (r.counterEnd - r.counter * 60000)) / 60000);
-                statusText = `✅ Tamamlandı (${elapsed} dk)`;
-            } else if (r.status === 'expired') {
+            if (r.status === 'expired') {
                 const elapsed = Math.round((now - (r.counterEnd - r.counter * 60000)) / 60000);
                 statusText = `⏰ Süre Doldu (${elapsed} dk)`;
             } else {
@@ -948,7 +942,7 @@
             let statusClass = 'counter-active';
             let btnHtml = '';
 
-            if (rec.counter) {
+            if (rec.counter !== null && rec.counter !== undefined) {
                 const now = Date.now();
                 const startTime = rec.counterEnd - rec.counter * 60000;
                 let elapsed = 0;
@@ -979,15 +973,9 @@
                         }
                     }
                 }
-            } else {
-                // Sayaçsız kayıtlar için durum
-                if (rec.status === 'completed') {
-                    statusDisplay = '✅ Tamamlandı';
-                    statusClass = 'counter-completed';
-                }
             }
 
-            // Tamamlandı butonu - TÜM KAYITLAR İÇİN (sayaçlı veya sayaçsız)
+            // Tamamlandı butonu - TÜM KAYITLAR İÇİN
             if (rec.status !== 'completed') {
                 btnHtml = `<button class="status-btn complete" data-id="${rec.id}">✅ Tamamlandı</button>`;
             } else {
@@ -1023,7 +1011,7 @@
                 const id = this.dataset.id;
                 if (confirm('Bu ürünü tamamlandı olarak işaretlemek istediğinize emin misiniz?')) {
                     const rec = allRecords.find(r => r.id === id);
-                    if (rec && rec.counter) {
+                    if (rec && rec.counter !== null && rec.counter !== undefined) {
                         // Sayaçlı kayıt - elapsed hesapla
                         const startTime = rec.counterEnd - rec.counter * 60000;
                         const elapsed = Math.round((Date.now() - startTime) / 60000);
@@ -1110,7 +1098,7 @@
         const rows = [['Ürün', 'Kayıt Saati', 'Tarih', 'Kullanıcı', 'Sayaç', 'Durum']];
         recordsToExport.forEach(rec => {
             let counterText = '-';
-            if (rec.counter) {
+            if (rec.counter !== null && rec.counter !== undefined) {
                 const startTime = rec.counterEnd - rec.counter * 60000;
                 let elapsed = Math.round((Date.now() - startTime) / 60000);
                 if (rec.status === 'completed' && rec.elapsedWhenCompleted !== null) {
@@ -1174,7 +1162,7 @@
     setInterval(() => {
         const now = Date.now();
         allRecords.forEach(rec => {
-            if (rec.counter && rec.status === 'active' && rec.counterEnd) {
+            if (rec.counter !== null && rec.counter !== undefined && rec.status === 'active' && rec.counterEnd) {
                 if (now >= rec.counterEnd) {
                     db.ref('records/' + rec.id).update({ status: 'expired' });
                 }
