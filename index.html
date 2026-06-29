@@ -653,7 +653,7 @@
         renderTable([]);
     });
 
-    // ----- KAYIT EKLE (Sadece kayıt ekler, sayaç bilgisi taşımaz) -----
+    // ----- KAYIT EKLE (Sadece kayıt ekler) -----
     document.getElementById('saveRecordBtn').addEventListener('click', function() {
         if (!currentUser) {
             document.getElementById('saveMessage').textContent = '⛔ Lütfen giriş yapın.';
@@ -675,7 +675,7 @@
         const timeStr = now.toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
         const timestamp = now.getTime();
 
-        // Sadece yeni kayıt ekle - sayaç bilgisi taşıma
+        // Yeni kayıt oluştur - sayaç bilgisi taşıma
         const newRecord = {
             group, sira, product, timestamp, date: dateStr, time: timeStr, user: currentUser,
             counter: null,
@@ -695,7 +695,7 @@
             });
     });
 
-    // ----- ALARM KUR / GÜNCELLE (SADECE ADMIN) -----
+    // ----- ALARM KUR / GÜNCELLE (SADECE ADMIN - KAYIT OLUŞTURMAZ) -----
     document.getElementById('setAlarmBtn').addEventListener('click', function() {
         if (currentUser !== 'admin') {
             document.getElementById('alarmMessage').textContent = '⛔ Sadece admin yetkilidir.';
@@ -720,30 +720,35 @@
         const now = Date.now();
         const endTime = now + duration * 60000;
 
-        // Önce bu ürün için mevcut aktif sayaç kaydını bul
-        const existingCounter = allRecords.find(r => r.product === product && r.counter !== null && r.counter !== undefined && r.status !== 'completed');
+        // Sadece sayaç bilgisini kaydet - KAYIT OLUŞTURMA
+        const counterConfig = {
+            counter: duration,
+            counterEnd: endTime,
+            status: 'active',
+            completedAt: null,
+            elapsedWhenCompleted: null
+        };
+
+        // Önce bu ürün için mevcut bir sayaç kaydı var mı kontrol et
+        const existingCounter = allRecords.find(r => r.product === product && r.counter !== null && r.counter !== undefined);
 
         if (existingCounter) {
-            // Mevcut sayaç kaydını güncelle
-            db.ref('records/' + existingCounter.id).update({
-                counter: duration,
-                counterEnd: endTime,
-                status: 'active',
-                completedAt: null,
-                elapsedWhenCompleted: null
-            }).then(() => {
-                document.getElementById('alarmMessage').textContent = `✅ Sayaç güncellendi: ${product} ${duration} dk`;
-                document.getElementById('alarmSiraInput').value = '';
-                document.getElementById('alarmDurationInput').value = '';
-            }).catch(err => {
-                document.getElementById('alarmMessage').textContent = `❌ Hata: ${err.message}`;
-            });
+            // Mevcut kaydı güncelle (sadece sayaç bilgilerini)
+            db.ref('records/' + existingCounter.id).update(counterConfig)
+                .then(() => {
+                    document.getElementById('alarmMessage').textContent = `✅ Sayaç güncellendi: ${product} ${duration} dk (Kayıt oluşturulmadı)`;
+                    document.getElementById('alarmSiraInput').value = '';
+                    document.getElementById('alarmDurationInput').value = '';
+                })
+                .catch(err => {
+                    document.getElementById('alarmMessage').textContent = `❌ Hata: ${err.message}`;
+                });
         } else {
-            // Yeni sayaç kaydı oluştur
+            // Yeni sayaç kaydı oluştur (sadece sayaç bilgisi, kayıt olarak görünmez)
             const now2 = new Date();
             const dateStr = now2.toLocaleDateString('tr-TR');
             const timeStr = now2.toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
-            const alarmRecord = {
+            const counterRecord = {
                 group, sira, product,
                 timestamp: now2.getTime(),
                 date: dateStr,
@@ -753,11 +758,12 @@
                 counterEnd: endTime,
                 status: 'active',
                 completedAt: null,
-                elapsedWhenCompleted: null
+                elapsedWhenCompleted: null,
+                isCounterOnly: true  // Bu kaydın sadece sayaç olduğunu belirt
             };
-            db.ref('records').push(alarmRecord)
+            db.ref('records').push(counterRecord)
                 .then(() => {
-                    document.getElementById('alarmMessage').textContent = `✅ Sayaç kuruldu: ${product} ${duration} dk`;
+                    document.getElementById('alarmMessage').textContent = `✅ Sayaç kuruldu: ${product} ${duration} dk (Kayıt oluşturulmadı)`;
                     document.getElementById('alarmSiraInput').value = '';
                     document.getElementById('alarmDurationInput').value = '';
                 })
@@ -836,7 +842,8 @@
                         counterEnd: item.counterEnd || null,
                         status: item.status || 'active',
                         completedAt: item.completedAt || null,
-                        elapsedWhenCompleted: item.elapsedWhenCompleted || null
+                        elapsedWhenCompleted: item.elapsedWhenCompleted || null,
+                        isCounterOnly: item.isCounterOnly || false
                     });
                 });
             }
@@ -851,7 +858,7 @@
         const container = document.getElementById('activeCountersList');
         if (!container) return;
         // Sadece aktif sayaçları göster (tamamlanmamış ve süresi dolmamış)
-        const counters = allRecords.filter(r => r.counter !== null && r.counter !== undefined && r.status !== 'completed');
+        const counters = allRecords.filter(r => r.counter !== null && r.counter !== undefined && r.status !== 'completed' && r.status !== 'expired');
         const uniqueProducts = {};
         counters.forEach(r => {
             if (!uniqueProducts[r.product]) {
@@ -868,13 +875,7 @@
         uniqueList.forEach(r => {
             const now = Date.now();
             const remaining = Math.max(0, Math.round((r.counterEnd - now) / 60000));
-            let statusText = '';
-            if (r.status === 'expired') {
-                const elapsed = Math.round((now - (r.counterEnd - r.counter * 60000)) / 60000);
-                statusText = `⏰ Süre Doldu (${elapsed} dk)`;
-            } else {
-                statusText = `${remaining} dk kaldı`;
-            }
+            let statusText = `${remaining} dk kaldı`;
             html += `<span class="alarm-list-item">
                 <strong>${r.product}</strong> 
                 <span style="color:#1f3a57;">${r.counter} dk</span>
@@ -894,7 +895,11 @@
         const filterDateVal = document.getElementById('filterDate').value;
         const filterProductVal = document.getElementById('filterProduct').value.trim().toUpperCase();
 
+        // Sadece gerçek kayıtları göster (isCounterOnly olmayanlar)
         let filtered = allRecords.filter(rec => {
+            // Sadece sayaç kaydı olanları gizle
+            if (rec.isCounterOnly) return false;
+            
             if (filterDateVal) {
                 const parts = rec.date.split('.');
                 if (parts.length === 3) {
@@ -942,6 +947,7 @@
             let statusClass = 'counter-active';
             let btnHtml = '';
 
+            // Sayaç bilgisini kontrol et
             if (rec.counter !== null && rec.counter !== undefined) {
                 const now = Date.now();
                 const startTime = rec.counterEnd - rec.counter * 60000;
@@ -1019,6 +1025,12 @@
                             status: 'completed',
                             completedAt: Date.now(),
                             elapsedWhenCompleted: elapsed
+                        }).then(() => {
+                            // Tamamlandıktan sonra sayaç bilgilerini sıfırla (yeni kayıtlar için)
+                            db.ref('records/' + id).update({
+                                counter: null,
+                                counterEnd: null
+                            });
                         }).catch(err => alert('Hata: ' + err.message));
                     } else {
                         // Sayaçsız kayıt - sadece status güncelle
